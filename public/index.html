@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>PokerCircle — покер с друзьями</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Montserrat:wght@600;700;800&family=Oswald:wght@500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0a0c14">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="PokerCircle">
+</head>
+<body>
+  <!-- Фон: лаунж с видом на ночной город -->
+  <div class="scene" id="scene">
+    <div class="windows" id="windows"></div>
+    <div class="floor"></div>
+    <div class="glow" style="left:8%;top:52%;width:320px;height:200px;background:#7a4a14"></div>
+    <div class="glow" style="right:6%;top:48%;width:360px;height:220px;background:#6a4416"></div>
+    <div class="neon">
+      <svg viewBox="0 0 54 64" fill="none" stroke="#f7dc95" stroke-width="2.4"><path d="M27 4C20 16 4 24 4 37c0 8 6 13 12 13 4 0 7-2 9-5-1 6-3 10-7 14h18c-4-4-6-8-7-14 2 3 5 5 9 5 6 0 12-5 12-13C50 24 34 16 27 4z"/></svg>
+      GOOD GAME<br>GOOD FRIENDS
+    </div>
+    <div class="vignette"></div>
+  </div>
+
+  <!-- Вход -->
+  <div class="screen" id="login">
+    <div class="login-card">
+      <img src="icon-192.png" alt="" style="width:76px;height:76px;border-radius:18px;display:block;margin:0 auto;box-shadow:0 8px 30px rgba(0,0,0,.5)">
+      <h1>PokerCircle</h1>
+      <p>Техасский холдем с друзьями. Каждый — со своего устройства.</p>
+      <div class="seg auth-tabs" id="authTabs"><button data-auth="login" class="on">Вход</button><button data-auth="reg">Регистрация</button></div>
+      <div class="field"><label>Номер телефона</label><div class="phone-in"><span>+</span><input class="input" id="loginPhone" type="tel" inputmode="tel" maxlength="20" placeholder="998 90 123 45 67" autocomplete="tel"></div></div>
+      <div class="field reg-only" hidden><label>Ваше имя в игре</label><input class="input" id="loginName" maxlength="18" placeholder="Например, Максим" autocomplete="nickname"></div>
+      <div class="field"><label>Пароль</label><input class="input" id="loginPin" type="password" maxlength="40" placeholder="Минимум 4 символа" autocomplete="current-password"></div>
+      <div class="field reg-only" hidden><label>Аватар</label><div class="avatars" id="avatarPick"></div></div>
+      <div class="login-hint reg-only" hidden>🎁 При регистрации — <b class="gold">100 000 фишек</b> на баланс. Фишки игровые, без денег.</div>
+      <button class="btn btn-gold wide" id="loginBtn">Войти</button>
+      <div class="login-err" id="loginErr" hidden></div>
+      <div class="ip-note" id="loginIp">Подключение к серверу…</div>
+    </div>
+  </div>
+
+  <div id="app" hidden>
+    <header class="topbar">
+      <div class="logo" data-go="lobby">
+        <img src="icon-192.png" alt="" class="logo-img">
+        <div><b>PokerCircle</b><small>Играем с друзьями</small></div>
+      </div>
+      <nav class="nav" id="nav">
+        <button data-go="lobby" class="active">Лобби</button>
+        <button data-go="rooms">Комнаты</button>
+        <button data-go="table" id="navTable" hidden>Мой стол</button>
+        <button data-go="profile">Кабинет</button>
+        <button data-go="settings">Настройки</button>
+      </nav>
+      <div class="top-right">
+        <div class="online"><i class="dot"></i><span>Онлайн:</span> <b id="onlineN">0</b></div>
+        <button class="icon-btn" id="friendsBtn" title="Кто онлайн"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><circle cx="17" cy="9" r="2.6"/><path d="M16.5 14.6c2.6.2 4.4 1.9 5 5"/></svg></button>
+        <button class="icon-btn" id="bellBtn" title="Уведомления"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span class="badge-n" id="bellN" hidden>0</span></button>
+        <button class="icon-btn mobile-chat-btn" id="chatToggle" title="Чат"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg></button>
+        <button class="wallet-pill" id="walletPill" data-go="profile" title="Баланс"><i class="chip-ico"></i><b id="walletBal">0</b></button>
+        <div class="user" id="userBtn">
+          <div class="ava" id="userAva">🦊</div><b class="nm" id="userName">Игрок</b>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+          <div class="menu" id="userMenu" hidden>
+            <button data-go="profile">Мой кабинет</button>
+            <button data-go="settings">Настройки</button>
+            <button id="logoutBtn">Выйти из профиля</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Левая колонка -->
+    <div class="leftcol">
+      <div class="panel leftnav">
+        <button class="create" id="createBtn"><i class="plus">+</i><span>Создать комнату</span></button>
+        <button id="quickBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg><span>Быстрая игра</span></button>
+        <button id="privateBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span>Приватная комната</span></button>
+        <button id="tourBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg><span>Турниры</span></button>
+        <button id="histBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>История игр</span></button>
+      </div>
+      <div class="spacer"></div>
+      <div class="panel infopanel" id="infoPanel" hidden></div>
+      <div class="panel voicebox">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#31c46c" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
+        <button class="toggle on" id="voiceToggle" aria-label="Голос дилера"></button>
+        <span class="lbl">Голос дилера: <b id="voiceLbl">Вкл.</b></span>
+      </div>
+    </div>
+
+    <main>
+      <!-- Лобби -->
+      <section class="view" id="view-lobby">
+        <div class="lobby">
+          <div class="hero">
+            <div class="hero-text">
+              <h2>Добро пожаловать за стол, <span class="gold" id="heroName">друг</span>!</h2>
+              <p>Создайте комнату, отправьте друзьям ссылку — и играйте в техасский холдем. Дилер Алиса раздаёт карты, следит за правилами и всё озвучивает.</p>
+              <div class="actions">
+                <button class="btn btn-gold" id="heroCreate">＋ Создать комнату</button>
+                <button class="btn btn-blue" id="heroQuick">⚡ Быстрая игра</button>
+                <button class="btn btn-ghost" id="heroJoin">🔒 Войти по номеру стола</button>
+                <button class="btn btn-ghost" id="installBtn" hidden>📲 Установить приложение</button>
+              </div>
+            </div>
+            <div class="hero-dealer" id="heroDealer"></div>
+          </div>
+          <div class="section-h" id="roomsAnchor"><h3>Открытые столы</h3><span class="muted" id="roomsCount"></span></div>
+          <div class="rooms" id="roomsList"></div>
+          <div class="section-h"><h3>Как играть с друзьями</h3></div>
+          <div class="howto">
+            <div class="panel"><b>1. Зарегистрируйтесь</b>По номеру телефона и паролю. На баланс сразу 100 000 игровых фишек, каждые 4 часа — бонус. Входите с любого телефона или компьютера.</div>
+            <div class="panel"><b>2. Позовите друзей</b>Отправьте ссылку на сайт — друзья откроют её на телефоне или компьютере из любого города:
+              <div id="lanLinks"></div></div>
+            <div class="panel"><b>3. Создавайте и играйте</b>Любой, у кого есть ссылка, может создать свой стол и позвать друзей кнопкой «Пригласить». Пароль защищает приватные игры.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Стол -->
+      <section class="view" id="view-table" hidden style="overflow:hidden">
+        <div class="table-top">
+          <button class="btn btn-dark" id="leaveBtn">← Выйти</button>
+          <button class="btn btn-dark" id="inviteBtn">🔗 Пригласить</button>
+          <button class="btn btn-dark" id="pauseBtn" hidden>⏸ Пауза</button>
+          <button class="btn btn-dark" id="standBtn" hidden>Встать</button>
+          <button class="btn btn-gold" id="rebuyBtn" hidden>Докупиться</button>
+          <button class="btn btn-gold" id="startTourBtn" hidden>▶ Начать турнир</button>
+        </div>
+        <div id="stageWrap">
+          <div id="stage">
+            <div class="table"><div class="felt"><div class="felt-logo"><svg viewBox="0 0 24 24" fill="rgba(255,255,255,.35)"><path d="M12 2C9 7 3 9.5 3 14c0 2.8 2.2 4.5 4.4 4.5 1.5 0 2.7-.7 3.4-1.8-.3 2-1 3.4-2.4 4.8h7.2c-1.4-1.4-2.1-2.8-2.4-4.8.7 1.1 1.9 1.8 3.4 1.8 2.2 0 4.4-1.7 4.4-4.5C21 9.5 15 7 12 2z"/></svg></div></div></div>
+            <div class="street-name" id="streetName"></div>
+            <div class="board-zone" id="board"></div>
+            <div class="pot-pill" id="potPill" hidden>Банк: <b id="potAmt">0</b></div>
+            <div class="pot-chips" id="potChips"></div>
+            <div id="seatsLayer"></div>
+            <div id="fxLayer"></div>
+            <div class="pause-banner" id="pauseBanner" hidden><b>⏸ ПАУЗА</b><span id="pauseWho"></span><button class="btn btn-gold" id="resumeBtn">▶ Продолжить игру</button></div>
+          </div>
+        </div>
+        <div id="actionArea"></div>
+      </section>
+
+      <section class="view" id="view-profile" hidden><div class="profile" id="profileBox"></div></section>
+      <section class="view" id="view-settings" hidden><div class="settings" id="settingsBox"></div></section>
+    </main>
+
+    <!-- Нижнее меню для телефона -->
+    <nav class="tabbar" id="tabbar">
+      <button data-tab-go="lobby" class="active"><i>🏠</i>Лобби</button>
+      <button data-tab-go="table" id="tabTable"><i>🃏</i>Стол</button>
+      <button data-tab-go="chat"><i>💬</i>Чат<b class="dotn" id="chatDot" hidden></b></button>
+      <button data-tab-go="profile"><i>👤</i>Кабинет</button>
+      <button data-tab-go="settings"><i>⚙️</i>Ещё</button>
+    </nav>
+
+    <!-- Правая колонка -->
+    <div class="rightcol" id="rightcol">
+      <div class="panel chat">
+        <div class="tabs" id="rtabs">
+          <button data-tab="chat" class="active">Чат</button>
+          <button data-tab="hist">История</button>
+          <button data-tab="online">Онлайн</button>
+        </div>
+        <div class="chat-list" id="chatList"></div>
+        <div class="chat-list" id="histList" hidden></div>
+        <div class="chat-list" id="onlineList" hidden></div>
+        <div class="chat-input" id="chatInputRow">
+          <input id="chatInput" maxlength="200" placeholder="Написать сообщение…" autocomplete="off">
+          <button class="icon-btn" id="emojiBtn" title="Эмодзи"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5s1.3 2 3.5 2 3.5-2 3.5-2M9 9.5h.01M15 9.5h.01"/></svg></button>
+          <button class="icon-btn" id="sendBtn" title="Отправить"><svg viewBox="0 0 24 24" fill="#c9cede"><path d="M3 20.5 21 12 3 3.5 5.5 12z"/></svg></button>
+          <div class="emoji-pop" id="emojiPop" hidden></div>
+        </div>
+      </div>
+      <div class="panel toolbox">
+        <button id="rulesBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 5c3-1.5 6-1.5 10 1v14c-4-2.5-7-2.5-10-1zM22 5c-3-1.5-6-1.5-10 1v14c4-2.5 7-2.5 10-1z"/></svg>Правила</button>
+        <button id="combosBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="10" height="14" rx="1.5" transform="rotate(-10 8 13)"/><rect x="10" y="4" width="10" height="14" rx="1.5" transform="rotate(8 15 11)"/></svg>Комбинации</button>
+        <button data-go="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Настройки</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modalRoot"></div>
+  <div id="toasts"></div>
+
+  <script src="dealer.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
