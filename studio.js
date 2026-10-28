@@ -9,7 +9,8 @@ const os = require('os');
 const PHRASES = JSON.parse(fs.readFileSync(path.join(__dirname, 'tools', 'voice-phrases.json'), 'utf8'));
 const GEN_DIR = path.join(os.tmpdir(), 'pokercircle-voice');
 const API = 'https://api.elevenlabs.io/v1';
-const state = { running: false, done: 0, total: 0, voice: '', error: '' };
+const state = { running: false, done: 0, total: 0, voice: '', error: '', queue: [], finished: [] };
+const slug = n => String(n).split(/[\s-]/)[0].toLowerCase().replace(/[^a-z0-9]/g, '') || 'voice';
 
 const key = () => process.env.ELEVEN_KEY || '';
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -45,27 +46,52 @@ function zip(files) {
   return Buffer.concat([...parts, cd, e]);
 }
 
-async function generateAll(voiceId, voiceName) {
-  if (state.running) return;
-  Object.assign(state, { running: true, done: 0, total: Object.keys(PHRASES).length, voice: voiceName, error: '' });
+function listPacks() {
+  const out = [];
   try {
-    const dir = path.join(GEN_DIR, 'pack'); fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
-    for (const [k, text] of Object.entries(PHRASES)) {
-      let ok = false;
-      for (let t = 0; t < 3 && !ok; t++) { try { fs.writeFileSync(path.join(dir, k + '.mp3'), await tts(voiceId, text)); ok = true; } catch (e) { if (t === 2) throw e; await new Promise(r => setTimeout(r, 1500)); } }
-      state.done++;
+    for (const d of fs.readdirSync(path.join(GEN_DIR, 'pack'))) {
+      const f = path.join(GEN_DIR, 'pack', d, 'index.json');
+      if (fs.existsSync(f)) { const j = JSON.parse(fs.readFileSync(f, 'utf8')); out.push({ id: d, name: j.voice, keys: j.keys }); }
     }
-    fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify({ voice: voiceName, keys: Object.keys(PHRASES) }));
-  } catch (e) { state.error = e.message; }
-  state.running = false;
+  } catch (e) { }
+  return out;
+}
+function enqueue(voiceId, voiceName) {
+  if (state.queue.some(q => q.voiceId === voiceId) || (state.running && state.current === voiceId)) return;
+  state.queue.push({ voiceId, voiceName });
+  if (!state.running) runQueue();
+}
+async function runQueue() {
+  while (state.queue.length) {
+    const { voiceId, voiceName } = state.queue.shift();
+    Object.assign(state, { running: true, current: voiceId, done: 0, total: Object.keys(PHRASES).length, voice: voiceName, error: '' });
+    try {
+      const dir = path.join(GEN_DIR, 'pack', slug(voiceName)); fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
+      for (const [k, text] of Object.entries(PHRASES)) {
+        let ok = false;
+        for (let t = 0; t < 3 && !ok; t++) { try { fs.writeFileSync(path.join(dir, k + '.mp3'), await tts(voiceId, text)); ok = true; } catch (e) { if (t === 2) throw e; await new Promise(r => setTimeout(r, 1500)); } }
+        state.done++;
+      }
+      fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify({ voice: voiceName.split(' - ')[0], keys: Object.keys(PHRASES) }));
+      state.finished.push(voiceName);
+    } catch (e) { state.error = voiceName + ': ' + e.message; state.queue = []; }
+  }
+  state.running = false; state.current = '';
 }
 
 // Готовый набор отдаётся сайту сразу (до перезапуска сервера), пока его не положили в public/voice
 function serveGenerated(url, res) {
   if (!url.startsWith('/voice/')) return false;
-  const f = path.join(GEN_DIR, 'pack', path.basename(url));
+  if (url === '/voice/voices.json') {
+    const packs = listPacks(); if (!packs.length) return false;
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
+    res.end(JSON.stringify({ voices: packs })); return true;
+  }
+  const parts = url.split('/').filter(Boolean); // voice, <id>, <file>
+  if (parts.length !== 3) return false;
+  const f = path.join(GEN_DIR, 'pack', path.basename(parts[1]), path.basename(parts[2]));
   if (!fs.existsSync(f)) return false;
-  res.writeHead(200, { 'Content-Type': f.endsWith('.json') ? 'application/json' : 'audio/mpeg', 'Cache-Control': 'no-cache' });
+  res.writeHead(200, { 'Content-Type': f.endsWith('.json') ? 'application/json' : 'audio/mpeg', 'Cache-Control': 'public, max-age=86400' });
   res.end(fs.readFileSync(f));
   return true;
 }
@@ -81,11 +107,18 @@ async function handle(req, res, url, SECRET) {
       const mp3 = await tts(q.get('voice'), q.get('text') || PHRASES.hello);
       res.writeHead(200, { 'Content-Type': 'audio/mpeg' }); res.end(mp3); return true;
     }
-    if (url === '/studio/generate') { generateAll(q.get('voice'), q.get('name') || 'voice'); res.writeHead(302, { Location: `/studio?key=${k}` }); res.end(); return true; }
+    if (url === '/studio/generate') {
+      for (const v of String(q.get('voice') || '').split(',').filter(Boolean)) {
+        const nm = (q.get('names') || '').split('|')[String(q.get('voice')).split(',').indexOf(v)] || q.get('name') || v;
+        enqueue(v, nm);
+      }
+      res.writeHead(302, { Location: `/studio?key=${k}` }); res.end(); return true;
+    }
     if (url === '/studio/status') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(state)); return true; }
     if (url === '/studio/pack.zip') {
-      const dir = path.join(GEN_DIR, 'pack');
-      const files = fs.readdirSync(dir).map(n => ['voice/' + n, fs.readFileSync(path.join(dir, n))]);
+      const dir = path.join(GEN_DIR, 'pack'), files = [];
+      for (const d of fs.readdirSync(dir)) for (const n of fs.readdirSync(path.join(dir, d))) files.push([`voice/${d}/${n}`, fs.readFileSync(path.join(dir, d, n))]);
+      files.push(['voice/voices.json', Buffer.from(JSON.stringify({ voices: listPacks() }))]);
       res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename="alisa-voice.zip"' }); res.end(zip(files)); return true;
     }
     // главная страница студии: список голосов
@@ -93,12 +126,12 @@ async function handle(req, res, url, SECRET) {
     let sub = ''; try { const u = await (await api('/user/subscription')).json(); sub = `Осталось символов: ${(u.character_limit - u.character_count).toLocaleString('ru-RU')} из ${u.character_limit.toLocaleString('ru-RU')}`; } catch (e) { }
     const fem = v => /female|woman|жен/i.test(JSON.stringify(v.labels || {}));
     voices.sort((a, b) => fem(b) - fem(a));
-    const packReady = fs.existsSync(path.join(GEN_DIR, 'pack', 'index.json'));
+    const packs = listPacks(); const packReady = packs.length > 0;
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Студия голоса Алисы</title>
 <style>body{font-family:system-ui,Segoe UI,Arial;background:#0b0d15;color:#eee;max-width:900px;margin:0 auto;padding:16px}h1{font-size:22px}.v{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px;border:1px solid #2a3045;border-radius:12px;margin:8px 0;background:#121626}.v b{min-width:160px}.v small{color:#8e96ab;flex:1;min-width:200px}button,a.btn{background:#e3bd6a;color:#1a1206;border:0;border-radius:9px;padding:9px 14px;font-weight:700;cursor:pointer;text-decoration:none}button.g{background:#2a3150;color:#fff}.st{padding:12px;border-radius:12px;background:#1b2238;margin:12px 0}</style></head><body>
 <h1>🎙️ Студия голоса Алисы</h1><div class="st">${esc(sub)}<br>Фраз для записи: ${Object.keys(PHRASES).length} (~${Object.values(PHRASES).join('').length} символов)</div>
-<div class="st" id="st">${state.running ? `Идёт запись голосом «${esc(state.voice)}»: ${state.done} / ${state.total}…` : state.error ? `Ошибка: ${esc(state.error)}` : packReady ? `✅ Набор записан (${esc(state.voice || 'готов')}). <a class="btn" href="/studio/pack.zip?key=${k}">Скачать архив</a>` : 'Выберите голос и нажмите «Записать все фразы».'}</div>
+<div class="st" id="st">${state.running ? `Идёт запись голосом «${esc(state.voice)}»: ${state.done} / ${state.total}… (в очереди ещё ${state.queue.length})` : ''}${state.error ? `<br>Ошибка: ${esc(state.error)}` : ''}${packReady ? `<br>✅ Записано голосов: ${packs.length} (${esc(packs.map(p => p.name).join(', '))}). <a class="btn" href="/studio/pack.zip?key=${k}">Скачать архив</a>` : ''}${!state.running && !packReady ? 'Выберите голос и нажмите «Записать все фразы».' : ''}</div>
 ${voices.map(v => `<div class="v"><b>${esc(v.name)}</b><small>${esc(Object.values(v.labels || {}).join(' · '))}</small>
 <button class="g" onclick="play('${esc(v.voice_id)}')">▶ Прослушать</button>
 <a class="btn" href="/studio/generate?key=${k}&voice=${encodeURIComponent(v.voice_id)}&name=${encodeURIComponent(v.name)}" onclick="return confirm('Записать все фразы голосом ${esc(v.name).replace(/'/g, '')}?')">Записать все фразы</a></div>`).join('')}
