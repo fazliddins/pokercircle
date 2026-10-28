@@ -1,0 +1,11 @@
+{
+  "name": "pokercircle",
+  "version": "1.0.0",
+  "description": "Онлайн-покер (Техасский холдем) для игры с друзьями",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "MIT",
+  "dependencies": {}
+}
