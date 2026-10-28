@@ -600,3 +600,7 @@ input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 
 @media (max-width: 980px) { .logo-img { width: 36px; height: 36px; } }
 .hero .hero-text { z-index: 2; } .hero .hero-dealer { z-index: 0; }
 .hero .actions { position: relative; z-index: 2; }
+.voice-pick { display: flex; flex-wrap: wrap; gap: 6px; max-width: 420px; justify-content: flex-end; }
+.voice-pick button { padding: 8px 12px; border-radius: 10px; background: rgba(255,255,255,.05); border: 1px solid var(--line2); font-size: 14px; }
+.voice-pick button.on { background: rgba(227,189,106,.18); border-color: var(--gold); color: var(--gold2); }
+@media (max-width: 980px) { .voice-pick { justify-content: flex-start; max-width: none; } }

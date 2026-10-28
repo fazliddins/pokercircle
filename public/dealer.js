@@ -172,24 +172,34 @@
 
   // ───────── Студийный голос: заранее записанные фразы (public/voice/*.mp3) ─────────
   const Pack = {
-    keys: null, name: '', buffers: {}, queue: [], playing: false, use: true, onStart: null, onEnd: null, src: null,
+    keys: null, name: '', id: '', voices: [], want: '', buffers: {}, queue: [], playing: false, use: true, onStart: null, onEnd: null, src: null,
     ctx() { return window.pcAudio ? window.pcAudio() : null; },
     async load() {
       try {
-        const r = await fetch('voice/index.json', { cache: 'no-cache' });
+        const r = await fetch('voice/voices.json', { cache: 'no-cache' });
         if (!r.ok) return;
-        const j = await r.json();
-        this.keys = new Set(j.keys || []); this.name = j.voice || '';
+        this.voices = (await r.json()).voices || [];
+        this.select(this.want);
+        if (this.onLoad) this.onLoad();
       } catch (e) { }
+    },
+    // выбрать голос по id (alisa, mira, marina…)
+    select(id) {
+      this.want = id || this.want;
+      const v = this.voices.find(x => x.id === this.want) || this.voices[0];
+      if (!v) return;
+      if (v.id !== this.id) { this.buffers = {}; this.id = v.id; this.name = v.name; this.keys = new Set(v.keys || []); }
     },
     ready() { return this.use && this.keys && this.keys.size > 0; },
     has(keys) { return this.ready() && Array.isArray(keys) && keys.length > 0 && keys.every(k => this.keys.has(k)); },
     async buf(k) {
       if (this.buffers[k]) return this.buffers[k];
       const c = this.ctx(); if (!c) throw new Error('no audio');
-      const ab = await (await fetch('voice/' + k + '.mp3')).arrayBuffer();
+      const id = this.id;
+      const ab = await (await fetch(`voice/${id}/${k}.mp3`)).arrayBuffer();
       const b = await new Promise((res, rej) => c.decodeAudioData(ab, res, rej));
-      this.buffers[k] = b; return b;
+      if (id === this.id) this.buffers[k] = b;
+      return b;
     },
     preload() { if (this.keys) [...this.keys].reduce((p, k) => p.then(() => this.buf(k).catch(() => { })), Promise.resolve()); },
     play(keys, kind) {

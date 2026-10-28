@@ -22,7 +22,7 @@
   const saveCfg = () => { store.set('cfg', cfg); applyCfg(); };
   function applyCfg() {
     const V = window.DealerVoice;
-    V.enabled = cfg.voice; V.voiceName = cfg.voiceName; V.volume = cfg.volume; V.rate = cfg.rate; V.pitch = cfg.pitch; V.style = cfg.voiceStyle; if (window.DealerPack) DealerPack.use = cfg.studio !== false; V.allActions = cfg.allActions;
+    V.enabled = cfg.voice; V.voiceName = cfg.voiceName; V.volume = cfg.volume; V.rate = cfg.rate; V.pitch = cfg.pitch; V.style = cfg.voiceStyle; if (window.DealerPack) { DealerPack.use = cfg.studio !== false; DealerPack.select(cfg.alisaVoice || ''); } V.allActions = cfg.allActions;
     document.body.classList.toggle('four', cfg.four);
     $('#voiceToggle').classList.toggle('on', cfg.voice);
     $('#voiceLbl').textContent = cfg.voice ? 'Вкл.' : 'Выкл.';
@@ -68,6 +68,7 @@
   };
 
   window.pcAudio = ac;
+  if (window.DealerPack) { DealerPack.want = cfg.alisaVoice || ''; DealerPack.onLoad = () => { DealerPack.select(cfg.alisaVoice || ''); if (S.view === 'settings') renderSettings(); }; }
   ['pointerdown', 'touchend', 'keydown'].forEach(ev => document.addEventListener(ev, () => { const a = ac(); if (a && a.state === 'suspended') a.resume(); }, { passive: true }));
 
   // ───────── Фон: ночной город ─────────
@@ -960,7 +961,8 @@
         ${row('Голос дилера', 'Алиса озвучивает раздачу, ставки и победителей', tg('voice'))}
         ${row('Голос', voices.length ? 'Выберите русский голос из установленных в системе' : '<span style="color:#ff8a98">Русские голоса не найдены. Установите русский язык речи в системе или откройте в Chrome/Edge.</span>',
       `<select class="select" id="voiceSel" style="width:240px">${['<option value="">Автовыбор (женский)</option>'].concat(voices.slice().sort((a, b) => DealerVoice.score(b) - DealerVoice.score(a)).map(v => `<option value="${esc(v.name)}" ${v.name === cfg.voiceName ? 'selected' : ''}>${DealerVoice.score(v) >= 40 ? '⭐ ' : ''}${esc(v.name)}</option>`)).join('')}</select>`)}
-        ${DealerPack.keys ? row('Голос Алисы', 'Студийный — живой записанный голос, одинаковый на всех устройствах', `<div class="seg" id="studioSeg" style="width:240px"><button data-st="1" class="${cfg.studio !== false ? 'on' : ''}">Студийный ✨</button><button data-st="0" class="${cfg.studio === false ? 'on' : ''}">Устройства</button></div>`) : ''}
+        ${DealerPack.voices.length ? row('Голос Алисы', 'Студийный — живой записанный голос, одинаковый на всех устройствах', `<div class="seg" id="studioSeg" style="width:240px"><button data-st="1" class="${cfg.studio !== false ? 'on' : ''}">Студийный ✨</button><button data-st="0" class="${cfg.studio === false ? 'on' : ''}">Устройства</button></div>`) : ''}
+        ${DealerPack.voices.length && cfg.studio !== false ? row('Чей голос', 'Нажмите на имя — Алиса сразу заговорит этим голосом', `<div class="voice-pick">${DealerPack.voices.map(v => `<button data-av="${esc(v.id)}" class="${v.id === DealerPack.id ? 'on' : ''}">🎙️ ${esc(v.name)}</button>`).join('')}</div>`) : ''}
         ${row('Манера речи', 'Бархатная — медленнее, ниже и с паузами; обычная — нейтрально', `<div class="seg" id="styleSeg" style="width:240px"><button data-vs="velvet" class="${cfg.voiceStyle === 'velvet' ? 'on' : ''}">Бархатная</button><button data-vs="normal" class="${cfg.voiceStyle !== 'velvet' ? 'on' : ''}">Обычная</button></div>`)}
         ${row('Сейчас говорит', DealerVoice.isNatural() ? '✅ Живой нейросетевой голос' : '⚠️ Голос звучит как робот. Откройте игру в <b>Microsoft Edge</b> — там есть живые голоса «Светлана» и «Дария» (Natural). На Android — Chrome, на iPhone — Safari.', `<b>${esc((DealerVoice.pick() || {}).name || 'нет')}</b>`)}
         ${row('Громкость голоса', '', rng('volume', 0, 1, .05))}
@@ -975,6 +977,8 @@
         ${row('Четырёхцветная колода', 'Бубны — синие, трефы — зелёные', tg('four'))}
       </div>`;
     $('#settingsBox').onclick = e => {
+      const av = e.target.closest('[data-av]');
+      if (av) { ac(); cfg.alisaVoice = av.dataset.av; saveCfg(); DealerPack.stop(); renderSettings(); Dealer.say('Добро пожаловать. Я Алиса.', 'major', ['hello']); return; }
       const st = e.target.closest('[data-st]');
       if (st) { cfg.studio = st.dataset.st === '1'; saveCfg(); renderSettings(); return; }
       const vs = e.target.closest('[data-vs]');
