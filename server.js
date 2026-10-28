@@ -8,6 +8,7 @@ const os = require('os');
 const crypto = require('crypto');
 const WS = require('./ws');
 const P = require('./poker');
+const Studio = require('./studio');
 
 if (process.env.POKER_FAST) { const st = global.setTimeout; global.setTimeout = (f, ms, ...a) => st(f, Math.ceil((ms || 0) / 60), ...a); }
 try { const lf = path.join(__dirname, 'server.log'); if (fs.statSync(lf).size > 2e6) fs.writeFileSync(lf, ''); } catch (e) { }
@@ -28,10 +29,11 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ ips: lanIPs(), port: PORT, publicUrl: Tunnel.url, sign: Sign.page, bot: TG.me ? TG.me.username : '' }));
   }
+  if (url.startsWith('/studio')) { Studio.handle(req, res, url, SECRET); return; }
   let file = path.normalize(path.join(PUBLIC, url === '/' ? 'index.html' : url));
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, data) => {
-    if (err) { res.writeHead(404); return res.end('Не найдено'); }
+    if (err) { if (Studio.serveGenerated(url, res)) return; res.writeHead(404); return res.end('Не найдено'); }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
     res.end(data);
   });
@@ -222,9 +224,10 @@ class Room {
     if (this.chat.length > 150) this.chat.shift();
     for (const c of this.conns()) send(c, 'chat', m);
   }
-  say(text, kind = 'major') {
+  // voice — список записанных фраз Алисы (public/voice/*.mp3), которые проигрываются вместо голоса устройства
+  say(text, kind = 'major', voice) {
     this.pushChat({ from: 'Дилер', text, dealer: true });
-    for (const c of this.conns()) send(c, 'dealer', { text, kind });
+    for (const c of this.conns()) send(c, 'dealer', { text, kind, voice: voice || null });
   }
   sfx(name, extra) { for (const c of this.conns()) send(c, 'sfx', Object.assign({ name }, extra || {})); }
 
@@ -307,7 +310,7 @@ class Room {
       sitOut: false, inHand: false, cards: [], folded: false, allIn: false, bet: 0, total: 0, acted: false,
       lastAction: '', revealed: false, best: null, winAmount: 0, rebuys: 0, leaving: false, discAt: 0
     };
-    this.say(pick([`${u.name}, добро пожаловать за мой стол.`, `Рада вас видеть, ${u.name}. Присаживайтесь.`, `${u.name} с нами. Становится интереснее.`]), 'info');
+    { const k = 1 + Math.floor(Math.random() * 3); this.say([`${u.name}, добро пожаловать за мой стол.`, `Рада вас видеть, ${u.name}. Присаживайтесь.`, `${u.name} с нами. Становится интереснее.`][k - 1], 'info', ['welcome_' + k]); }
     this.broadcast(); broadcastLobby();
     this.maybeStart();
     return null;
@@ -339,7 +342,7 @@ class Room {
       return;
     }
     this.release(i);
-    if (reason !== 'silent') this.say(`${p.name} покидает стол.`, 'info');
+    if (reason !== 'silent') this.say(`${p.name} покидает стол.`, 'info', ['leave']);
     this.broadcast(); broadcastLobby();
   }
 
@@ -377,7 +380,7 @@ class Room {
         const k = LEVELS[lvl];
         this.sb = round50(this.baseSb * k); this.bb = Math.max(this.sb * 2, round50(this.baseBb * k));
         this.ante = this.baseAnte ? round50(this.baseAnte * k) : 0;
-        this.say(`Внимание! Блайнды повышаются: ${this.sb} и ${this.bb}${this.ante ? `, анте ${this.ante}` : ''}.`);
+        this.say(`Внимание! Блайнды повышаются: ${this.sb} и ${this.bb}${this.ante ? `, анте ${this.ante}` : ''}.`, 'major', ['blinds_up']);
         broadcastLobby();
       }
     }
@@ -421,7 +424,7 @@ class Room {
     for (let r = 0; r < 2; r++) for (const i of order) this.seats[i].cards.push(h.deck.pop());
     eligible.forEach(p => { const st = statOf(p.pid); st.hands++; });
     const greet = ['Раздаю карты, мои дорогие. Удачи за столом.', 'Новая раздача. Пусть удача вам улыбнётся.', 'Карты пошли. Покажите, на что вы способны.', 'Начинаем. Играем красиво, как вы умеете.', 'Раздаю. Надеюсь, сегодня кто-то меня удивит.'];
-    this.say(pick(greet));
+    { const gi = Math.floor(Math.random() * greet.length); this.say(greet[gi], 'major', ['greet_' + (gi + 1)]); }
     for (const c of this.conns()) send(c, 'deal', { order, button: this.button });
     this.broadcast(); broadcastLobby();
     const id = h.id;
@@ -485,11 +488,11 @@ class Room {
       this.paused = true; this.pausedBy = who; this.pausedAt = Date.now();
       clearTimeout(this.nextTimer); this.nextTimer = null;
       if (h && !h.finished && h.toAct >= 0) { clearTimeout(this.timer); h.pausedLeft = Math.max(5000, h.deadline - Date.now()); h.deadline = 0; }
-      this.say(`Пауза. ${who} попросил небольшой перерыв... Отдохните, я подожду.`);
+      this.say(`Пауза. ${who} попросил небольшой перерыв... Отдохните, я подожду.`, 'major', ['pause']);
     } else {
       this.paused = false;
       if (this.levelStart && this.levelMode === 'time') this.levelStart += Date.now() - this.pausedAt; // время паузы не идёт в уровни блайндов
-      this.say(pick(['Продолжаем игру. Я скучала.', 'Перерыв окончен. Возвращаемся к картам.', 'Продолжаем, мои дорогие.']));
+      { const ri = 1 + Math.floor(Math.random() * 2); this.say(['Продолжаем игру. Я скучала.', 'Продолжаем, мои дорогие.'][ri - 1], 'major', ['resume_' + ri]); }
       if (h && h.finished) { this.nextTimer = setTimeout(() => { this.nextTimer = null; if (this.hand === h) this.afterHand(); }, 2500); }
       else if (h && h.toAct >= 0) this.armTurn(h.toAct, h.pausedLeft || this.turnTime * 1000);
       else if (!h) this.maybeStart();
@@ -508,7 +511,7 @@ class Room {
     const p = this.seats[i];
     const toCall = Math.max(0, h.currentBet - p.bet);
     const fmt = n => n.toLocaleString('ru-RU');
-    let say = '', sfx = 'chip';
+    let say = '', sfx = 'chip', voice = null;
 
     if (type === 'allin') {
       const to = p.bet + p.stack;
@@ -516,17 +519,17 @@ class Room {
       else { type = 'raise'; amount = to; }
     }
     if (type === 'fold') {
-      p.folded = true; p.lastAction = 'Фолд'; say = `${p.name} — пас`; sfx = 'fold';
+      p.folded = true; p.lastAction = 'Фолд'; say = `${p.name} — пас`; sfx = 'fold'; voice = ['fold'];
     } else if (type === 'check') {
       if (p.bet < h.currentBet) return 'Нельзя сделать чек — нужно уравнять ставку';
-      p.lastAction = 'Чек'; say = `${p.name} — чек`; sfx = 'check';
+      p.lastAction = 'Чек'; say = `${p.name} — чек`; sfx = 'check'; voice = ['check'];
     } else if (type === 'call') {
-      if (toCall === 0) { p.lastAction = 'Чек'; say = `${p.name} — чек`; sfx = 'check'; }
+      if (toCall === 0) { p.lastAction = 'Чек'; say = `${p.name} — чек`; sfx = 'check'; voice = ['check']; }
       else {
         const a = Math.min(toCall, p.stack);
         p.stack -= a; p.bet += a; p.total += a;
-        if (p.stack === 0) { p.allIn = true; p.lastAction = 'Олл-ин'; say = pick([`${p.name} идёт олл-ин. Смело.`, `Олл-ин от ${p.name}. Обожаю такую решимость.`]); }
-        else { p.lastAction = `Колл ${fmt(a)}`; say = `${p.name} — колл`; }
+        if (p.stack === 0) { p.allIn = true; p.lastAction = 'Олл-ин'; say = pick([`${p.name} идёт олл-ин. Смело.`, `Олл-ин от ${p.name}. Обожаю такую решимость.`]); voice = [pick(['allin_1', 'allin_2'])]; }
+        else { p.lastAction = `Колл ${fmt(a)}`; say = `${p.name} — колл`; voice = ['call']; }
       }
     } else if (type === 'raise') {
       if (p.acted) return 'Повышение сейчас невозможно';
@@ -546,9 +549,9 @@ class Room {
         this.seats.forEach((q, j) => { if (q && j !== i && q.inHand && !q.folded && !q.allIn) q.acted = false; });
       }
       h.currentBet = Math.max(h.currentBet, to);
-      if (p.stack === 0) { p.allIn = true; p.lastAction = 'Олл-ин'; say = pick([`${p.name} идёт олл-ин. ${fmt(to)}. Как смело.`, `Олл-ин, ${fmt(to)}. ${p.name}, вы умеете волновать.`]); }
-      else if (wasBet) { p.lastAction = `Ставка ${fmt(to)}`; say = `${p.name} ставит ${fmt(to)}`; }
-      else { p.lastAction = `Рейз ${fmt(to)}`; say = pick([`${p.name} повышает до ${fmt(to)}.`, `Рейз до ${fmt(to)}. Становится жарко.`, `${p.name} поднимает до ${fmt(to)}. Интересно.`]); }
+      if (p.stack === 0) { p.allIn = true; p.lastAction = 'Олл-ин'; say = pick([`${p.name} идёт олл-ин. ${fmt(to)}. Как смело.`, `Олл-ин, ${fmt(to)}. ${p.name}, вы умеете волновать.`]); voice = [pick(['allin_1', 'allin_2'])]; }
+      else if (wasBet) { p.lastAction = `Ставка ${fmt(to)}`; say = `${p.name} ставит ${fmt(to)}`; voice = ['bet']; }
+      else { p.lastAction = `Рейз ${fmt(to)}`; say = pick([`${p.name} повышает до ${fmt(to)}.`, `Рейз до ${fmt(to)}. Становится жарко.`, `${p.name} поднимает до ${fmt(to)}. Интересно.`]); voice = [pick(['raise_1', 'raise_2'])]; }
     } else return 'Неизвестное действие';
 
     p.acted = true;
@@ -556,7 +559,7 @@ class Room {
     clearTimeout(this.timer);
     h.toAct = -1;
     const major = /олл-ин|повышает|ставит/.test(say);
-    this.say(say, major ? 'major' : 'action');
+    this.say(say, major ? 'major' : 'action', voice);
     this.sfx(sfx, { seat: i, allin: p.allIn });
     this.proceed(i);
     if (this.hand === h && !h.finished && h.toAct === -1) this.broadcast();
@@ -578,7 +581,7 @@ class Room {
     if (this.canActCount() < 2 && !h.runout) {
       h.runout = true;
       this.live().forEach(p => (p.revealed = true));
-      this.say('Торги завершены. Открываем карты!');
+      this.say('Торги завершены. Открываем карты!', 'major', ['showdown']);
     }
     h.busy = true;
     this.broadcast();
@@ -592,13 +595,13 @@ class Room {
     if (h.street === 'preflop') {
       h.board.push(h.deck.pop(), h.deck.pop(), h.deck.pop());
       h.street = 'flop';
-      this.say(`Флоп. ${h.board.map(P.cardName).join(', ')}.`);
+      this.say(`Флоп. ${h.board.map(P.cardName).join(', ')}.`, 'major', ['flop', ...h.board.map(c => 'c_' + c.r + c.s)]);
     } else if (h.street === 'flop') {
       h.board.push(h.deck.pop()); h.street = 'turn';
-      this.say(`Тёрн. ${P.cardName(h.board[3])}.`);
+      this.say(`Тёрн. ${P.cardName(h.board[3])}.`, 'major', ['turn_card', 'c_' + h.board[3].r + h.board[3].s]);
     } else {
       h.board.push(h.deck.pop()); h.street = 'river';
-      this.say(`И ривер. ${P.cardName(h.board[4])}.`);
+      this.say(`И ривер. ${P.cardName(h.board[4])}.`, 'major', ['river', 'c_' + h.board[4].r + h.board[4].s]);
     }
     this.sfx('board');
     this.broadcast();
@@ -670,17 +673,20 @@ class Room {
         results.push({
           name: contested === 1 ? 'Банк' : (k === 0 ? 'Основной банк' : `Побочный банк ${k}`),
           amount: pot.amount, winners: winners.map(w => this.seats.indexOf(w)),
-          names: winners.map(w => w.name), hand: winners[0].best.desc
+          names: winners.map(w => w.name), hand: winners[0].best.desc, cat: winners[0].best.cat
         });
       });
       h.results = results;
       // озвучка
       const fmt = n => n.toLocaleString('ru-RU');
       const multi = results.filter(r => !r.refund).length > 1;
+      let voiced = false;
       for (const r of results) {
+        const v = voiced || r.refund ? null : (r.names.length === 1 ? [pick(['win_1', 'win_2', 'win_3']), 'combo_' + r.cat] : ['split', 'combo_' + r.cat]);
+        if (v) voiced = true;
         if (r.refund) { this.pushChat({ from: 'Система', text: `${r.names[0]}: возврат ${fmt(r.amount)} — ставку никто не уравнял`, system: true }); continue; }
-        if (r.names.length === 1) this.say(`${multi ? r.name + '. ' : ''}${pick(['Поздравляю', 'Браво', 'Прекрасно сыграно'])}, ${r.names[0]}. Ваши ${fmt(r.amount)}. ${r.hand}.`);
-        else this.say(`${multi ? r.name + ': ' : ''}ничья! Банк ${fmt(r.amount)} делят ${r.names.join(' и ')}. ${r.hand}.`);
+        if (r.names.length === 1) this.say(`${multi ? r.name + '. ' : ''}${pick(['Поздравляю', 'Браво', 'Прекрасно сыграно'])}, ${r.names[0]}. Ваши ${fmt(r.amount)}. ${r.hand}.`, 'major', v);
+        else this.say(`${multi ? r.name + ': ' : ''}ничья! Банк ${fmt(r.amount)} делят ${r.names.join(' и ')}. ${r.hand}.`, 'major', v);
       }
       this.sfx('win', { seats: [...new Set(results.flatMap(r => r.winners))] });
       this.finishHand();
@@ -696,7 +702,7 @@ class Room {
     this.seats.forEach(q => { if (q) q.bet = 0; });
     const i = this.seats.indexOf(p);
     h.results = [{ name: 'Банк', amount: pot, winners: [i], names: [p.name], hand: 'Все соперники сбросили карты' }];
-    this.say(pick([`${p.name} забирает банк. ${pot.toLocaleString('ru-RU')}.`, `Банк ваш, ${p.name}. ${pot.toLocaleString('ru-RU')}.`]));
+    this.say(pick([`${p.name} забирает банк. ${pot.toLocaleString('ru-RU')}.`, `Банк ваш, ${p.name}. ${pot.toLocaleString('ru-RU')}.`]), 'major', ['fold_win']);
     this.sfx('win', { seats: [i] });
     this.finishHand();
   }
@@ -754,14 +760,14 @@ class Room {
       busted.forEach((p, k) => {
         const place = remaining + busted.length - k;
         this.places.unshift({ name: p.name, place });
-        this.say(`${p.name} выбывает из турнира. ${place}-е место.`);
+        this.say(`${p.name} выбывает из турнира. ${place}-е место.`, 'major', ['bust']);
         this.release(this.seatOf(p.pid));
       });
       if (remaining <= 1 && this.started) {
         const champ = this.seats.find(p => p && p.stack > 0);
         if (champ) {
           this.places.unshift({ name: champ.name, place: 1 });
-          this.say(`Турнир окончен! Победитель — ${champ.name}! Поздравляем!`);
+          this.say(`Турнир окончен! Победитель — ${champ.name}! Поздравляем!`, 'major', ['tour_end']);
           this.sfx('champion');
           Wallet.credit(champ.pid, champ.stack);
           for (const c of clients) if (c.user && c.user.pid === champ.pid) send(c, 'toast', { text: `🏆 Приз ${champ.stack.toLocaleString('ru-RU')} фишек зачислен на баланс!` });
@@ -792,7 +798,7 @@ class Room {
     Wallet.charge(pid, need);
     p.stack += need; p.rebuys++;
     Wallet.inPlay(pid, this.id, p.stack);
-    this.say(`${p.name} докупает фишки до ${p.stack.toLocaleString('ru-RU')}.`, 'info');
+    this.say(`${p.name} докупает фишки до ${p.stack.toLocaleString('ru-RU')}.`, 'info', ['rebuy']);
     this.broadcast();
     this.maybeStart();
     return null;
@@ -814,7 +820,7 @@ class Room {
     this.started = true; this.places = []; this.level = 0; this.levelStart = Date.now(); this.levelHand = this.handNo;
     this.sb = this.baseSb; this.bb = this.baseBb; this.ante = this.baseAnte;
     this.seats.forEach(p => { if (p) { p.stack = this.startStack; p.sitOut = false; } });
-    this.say(`Турнир начинается! Игроков: ${n}. Блайнды ${this.sb} и ${this.bb}, повышение ${this.levelMode === 'hands' ? `каждые ${this.levelEvery} раздач` : `каждые ${this.levelEvery} минут`}. Удачи!`);
+    this.say(`Турнир начинается! Игроков: ${n}. Блайнды ${this.sb} и ${this.bb}, повышение ${this.levelMode === 'hands' ? `каждые ${this.levelEvery} раздач` : `каждые ${this.levelEvery} минут`}. Удачи!`, 'major', ['tour_start']);
     this.broadcast(); broadcastLobby();
     this.nextTimer = setTimeout(() => { this.nextTimer = null; this.startHand(); }, 3000);
     return null;
