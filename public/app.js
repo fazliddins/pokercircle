@@ -22,7 +22,7 @@
   const saveCfg = () => { store.set('cfg', cfg); applyCfg(); };
   function applyCfg() {
     const V = window.DealerVoice;
-    V.enabled = cfg.voice; V.voiceName = cfg.voiceName; V.volume = cfg.volume; V.rate = cfg.rate; V.pitch = cfg.pitch; V.style = cfg.voiceStyle; V.allActions = cfg.allActions;
+    V.enabled = cfg.voice; V.voiceName = cfg.voiceName; V.volume = cfg.volume; V.rate = cfg.rate; V.pitch = cfg.pitch; V.style = cfg.voiceStyle; if (window.DealerPack) DealerPack.use = cfg.studio !== false; V.allActions = cfg.allActions;
     document.body.classList.toggle('four', cfg.four);
     $('#voiceToggle').classList.toggle('on', cfg.voice);
     $('#voiceLbl').textContent = cfg.voice ? 'Вкл.' : 'Выкл.';
@@ -66,6 +66,9 @@
     win: () => [523, 659, 784, 1046].forEach((f, i) => tone(f, .35, 'triangle', .14, i * .11)),
     champion: () => [523, 659, 784, 1046, 784, 1046, 1318].forEach((f, i) => tone(f, .4, 'triangle', .15, i * .14))
   };
+
+  window.pcAudio = ac;
+  ['pointerdown', 'touchend', 'keydown'].forEach(ev => document.addEventListener(ev, () => { const a = ac(); if (a && a.state === 'suspended') a.resume(); }, { passive: true }));
 
   // ───────── Фон: ночной город ─────────
   function buildCity() {
@@ -144,7 +147,7 @@
       case 'left': S.roomId = null; S.st = null; $('#navTable').hidden = true; $('#infoPanel').hidden = true; go('lobby'); break;
       case 'state': onState(d); break;
       case 'chat': addChat(d); if (!d.dealer && !d.system && !$('#rightcol').classList.contains('open')) $('#chatDot').hidden = false; if (S.view !== 'table' && !d.dealer && !d.system) note(`💬 ${d.from}: ${d.text}`); break;
-      case 'dealer': Dealer.say(d.text, d.kind); break;
+      case 'dealer': Dealer.say(d.text, d.kind, d.voice); break;
       case 'sfx': onSfx(d); break;
       case 'deal': onDeal(d); break;
       case 'history': addHist(d, true); break;
@@ -229,7 +232,8 @@
     go(S.roomId ? 'table' : 'lobby');
     if (!S.greeted) {
       S.greeted = true;
-      setTimeout(() => Dealer.say(`Добро пожаловать, ${S.me.name}. Я Алиса, и сегодня карты раздаю я.`, 'major'), 400);
+      setTimeout(() => DealerPack.preload(), 1500);
+      setTimeout(() => Dealer.say(`Добро пожаловать, ${S.me.name}. Я Алиса, и сегодня карты раздаю я.`, 'major', ['hello']), 400);
       setTimeout(() => {
         DealerVoice.load();
         if (!cfg.voice || DealerVoice.isNatural() || store.get('voiceTip', 0) > 2) return;
@@ -408,7 +412,7 @@
       S.raiseTo = d.you.minRaiseTo;
       SFX.turn();
       if (!tryPreAction(d)) {
-        if (!DealerVoice.speaking && cfg.voice) Dealer.say([`${S.me.name}, ваш ход.`, `${S.me.name}... я жду вашего решения.`, `Ваш ход, ${S.me.name}. Удивите меня.`][Math.floor(Math.random() * 3)], 'major');
+        if (!DealerVoice.speaking && !DealerPack.playing && cfg.voice) { const ti = Math.floor(Math.random() * 3); Dealer.say([`${S.me.name}, ваш ход.`, `${S.me.name}... я жду вашего решения.`, `Ваш ход, ${S.me.name}. Удивите меня.`][ti], 'major', ['turn_' + (ti + 1)]); }
         if (document.hidden) note('⏰ Ваш ход за столом!');
       }
     }
@@ -956,6 +960,7 @@
         ${row('Голос дилера', 'Алиса озвучивает раздачу, ставки и победителей', tg('voice'))}
         ${row('Голос', voices.length ? 'Выберите русский голос из установленных в системе' : '<span style="color:#ff8a98">Русские голоса не найдены. Установите русский язык речи в системе или откройте в Chrome/Edge.</span>',
       `<select class="select" id="voiceSel" style="width:240px">${['<option value="">Автовыбор (женский)</option>'].concat(voices.slice().sort((a, b) => DealerVoice.score(b) - DealerVoice.score(a)).map(v => `<option value="${esc(v.name)}" ${v.name === cfg.voiceName ? 'selected' : ''}>${DealerVoice.score(v) >= 40 ? '⭐ ' : ''}${esc(v.name)}</option>`)).join('')}</select>`)}
+        ${DealerPack.keys ? row('Голос Алисы', 'Студийный — живой записанный голос, одинаковый на всех устройствах', `<div class="seg" id="studioSeg" style="width:240px"><button data-st="1" class="${cfg.studio !== false ? 'on' : ''}">Студийный ✨</button><button data-st="0" class="${cfg.studio === false ? 'on' : ''}">Устройства</button></div>`) : ''}
         ${row('Манера речи', 'Бархатная — медленнее, ниже и с паузами; обычная — нейтрально', `<div class="seg" id="styleSeg" style="width:240px"><button data-vs="velvet" class="${cfg.voiceStyle === 'velvet' ? 'on' : ''}">Бархатная</button><button data-vs="normal" class="${cfg.voiceStyle !== 'velvet' ? 'on' : ''}">Обычная</button></div>`)}
         ${row('Сейчас говорит', DealerVoice.isNatural() ? '✅ Живой нейросетевой голос' : '⚠️ Голос звучит как робот. Откройте игру в <b>Microsoft Edge</b> — там есть живые голоса «Светлана» и «Дария» (Natural). На Android — Chrome, на iPhone — Safari.', `<b>${esc((DealerVoice.pick() || {}).name || 'нет')}</b>`)}
         ${row('Громкость голоса', '', rng('volume', 0, 1, .05))}
@@ -970,13 +975,15 @@
         ${row('Четырёхцветная колода', 'Бубны — синие, трефы — зелёные', tg('four'))}
       </div>`;
     $('#settingsBox').onclick = e => {
+      const st = e.target.closest('[data-st]');
+      if (st) { cfg.studio = st.dataset.st === '1'; saveCfg(); renderSettings(); return; }
       const vs = e.target.closest('[data-vs]');
-      if (vs) { cfg.voiceStyle = vs.dataset.vs; if (vs.dataset.vs === 'velvet') { cfg.rate = 0.9; cfg.pitch = 0.93; } else { cfg.rate = 1; cfg.pitch = 1; } saveCfg(); renderSettings(); DealerVoice.stop(); Dealer.say('Добрый вечер. Я Алиса. Раздаю карты... удачи за столом.', 'major'); return; }
+      if (vs) { cfg.voiceStyle = vs.dataset.vs; if (vs.dataset.vs === 'velvet') { cfg.rate = 0.9; cfg.pitch = 0.93; } else { cfg.rate = 1; cfg.pitch = 1; } saveCfg(); renderSettings(); DealerVoice.stop(); DealerPack.stop(); Dealer.say('Добрый вечер. Я Алиса. Раздаю карты... удачи за столом.', 'major', ['greet_1']); return; }
       const dm = e.target.closest('[data-dm]');
       if (dm) { cfg.dealerMode = dm.dataset.dm; saveCfg(); $$('#dealerSeg button').forEach(b => b.classList.toggle('on', b === dm)); }
       const t = e.target.closest('[data-cfg]');
       if (t) { cfg[t.dataset.cfg] = !cfg[t.dataset.cfg]; saveCfg(); t.classList.toggle('on', cfg[t.dataset.cfg]); if (t.dataset.cfg === 'voice' && !cfg.voice) DealerVoice.stop(); }
-      if (e.target.id === 'testVoice') { DealerVoice.stop(); const prev = cfg.voice; DealerVoice.enabled = true; Dealer.say('Добрый вечер. Я Алиса. Раздаю карты... удачи за столом. Флоп. Туз пик, король червей, дама треф.', 'major'); DealerVoice.enabled = prev; }
+      if (e.target.id === 'testVoice') { ac(); DealerVoice.stop(); DealerPack.stop(); const prev = cfg.voice; DealerVoice.enabled = true; Dealer.say('Добро пожаловать. Я Алиса. Флоп: туз пик, король червей, дама треф.', 'major', ['hello', 'flop', 'c_14s', 'c_13h', 'c_12c']); setTimeout(() => (DealerVoice.enabled = prev), 100); }
     };
     $('#settingsBox').oninput = e => {
       const r = e.target.closest('[data-rng]');

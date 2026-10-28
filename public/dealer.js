@@ -170,6 +170,60 @@
   };
   if (Voice.supported) { Voice.load(); speechSynthesis.onvoiceschanged = () => Voice.load(); }
 
+  // ───────── Студийный голос: заранее записанные фразы (public/voice/*.mp3) ─────────
+  const Pack = {
+    keys: null, name: '', buffers: {}, queue: [], playing: false, use: true, onStart: null, onEnd: null, src: null,
+    ctx() { return window.pcAudio ? window.pcAudio() : null; },
+    async load() {
+      try {
+        const r = await fetch('voice/index.json', { cache: 'no-cache' });
+        if (!r.ok) return;
+        const j = await r.json();
+        this.keys = new Set(j.keys || []); this.name = j.voice || '';
+      } catch (e) { }
+    },
+    ready() { return this.use && this.keys && this.keys.size > 0; },
+    has(keys) { return this.ready() && Array.isArray(keys) && keys.length > 0 && keys.every(k => this.keys.has(k)); },
+    async buf(k) {
+      if (this.buffers[k]) return this.buffers[k];
+      const c = this.ctx(); if (!c) throw new Error('no audio');
+      const ab = await (await fetch('voice/' + k + '.mp3')).arrayBuffer();
+      const b = await new Promise((res, rej) => c.decodeAudioData(ab, res, rej));
+      this.buffers[k] = b; return b;
+    },
+    preload() { if (this.keys) [...this.keys].reduce((p, k) => p.then(() => this.buf(k).catch(() => { })), Promise.resolve()); },
+    play(keys, kind) {
+      if (!Voice.enabled) return;
+      if (kind === 'action' && !Voice.allActions) return;
+      if (this.queue.length > 2) this.queue = this.queue.filter(q => q.kind === 'major').slice(-2);
+      this.queue.push({ keys, kind });
+      if (!this.playing) this.next();
+    },
+    async next() {
+      const item = this.queue.shift();
+      if (!item) { this.playing = false; this.onEnd && this.onEnd(); return; }
+      this.playing = true; this.onStart && this.onStart();
+      const c = this.ctx();
+      try {
+        if (c && c.state === 'suspended') await c.resume();
+        for (const k of item.keys) {
+          const b = await this.buf(k);
+          await new Promise(res => {
+            const src = c.createBufferSource(), g = c.createGain();
+            g.gain.value = Voice.volume; src.buffer = b; src.connect(g).connect(c.destination);
+            src.onended = res; this.src = src; src.start();
+            setTimeout(res, b.duration * 1000 + 400);
+          });
+          await new Promise(r => setTimeout(r, 70));
+        }
+      } catch (e) { }
+      this.src = null;
+      setTimeout(() => this.next(), 260);
+    },
+    stop() { this.queue = []; try { this.src && this.src.stop(); } catch (e) { } this.playing = false; this.onEnd && this.onEnd(); }
+  };
+  Pack.load();
+
   // ───────── Управление анимацией ─────────
   const Dealer = {
     back: null, front: null, speech: null, speechTimer: null, talkTimer: null,
@@ -192,6 +246,8 @@
       this.setMode(this.mode);
       Voice.onStart = () => this.talk(true);
       Voice.onEnd = () => this.talk(false);
+      Pack.onStart = () => this.talk(true);
+      Pack.onEnd = () => this.talk(false);
     },
     setMode(m) {
       this.mode = m === 'drawn' ? 'drawn' : 'photo';
@@ -202,15 +258,17 @@
     els(sel) { return [this.back, this.front].filter(Boolean).flatMap(e => [...e.querySelectorAll(sel)]); },
     cls(name, on) { [this.back, this.front, this.pBack, this.pFront].forEach(e => e && e.classList.toggle(name, on)); },
     talk(on) { this.cls('talk', on); this.speech && this.speech.classList.toggle('talking', on); },
-    say(text, kind) {
+    say(text, kind, voice) {
       if (!this.speech) return;
       this.speech.querySelector('span').textContent = text;
       this.speech.classList.remove('hide');
       clearTimeout(this.speechTimer);
       this.speechTimer = setTimeout(() => this.speech.classList.add('hide'), 3500 + text.length * 40);
-      Voice.speak(text, kind);
-      // если голос выключен — губы всё равно двигаются
-      if (!Voice.enabled || !Voice.supported) {
+      const usePack = Pack.has(voice);
+      if (usePack) Pack.play(voice, kind);
+      else if (!Pack.ready()) Voice.speak(text, kind);   // голос устройства — только если студийного нет
+      // если голос выключен — анимация всё равно показывает речь
+      if (!Voice.enabled || (!usePack && !Voice.supported)) {
         this.talk(true); clearTimeout(this.talkTimer);
         this.talkTimer = setTimeout(() => this.talk(false), Math.min(4000, 600 + text.length * 55));
       }
@@ -238,4 +296,5 @@
 
   window.Dealer = Dealer;
   window.DealerVoice = Voice;
+  window.DealerPack = Pack;
 })();
