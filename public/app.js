@@ -328,7 +328,7 @@
         <div class="mini-table">${seats.join('')}</div>
         <h4><span>${r.isPrivate ? '🔒 ' : ''}${esc(r.name)}</span><span class="tag ${r.mode === 'tournament' ? 'gold' : ''}">${r.mode === 'tournament' ? 'Турнир' : 'Кэш'}${r.blindsUp ? ' · ↑' : ''}</span></h4>
         <div class="room-meta"><span>Блайнды ${fmt(r.sb)} / ${fmt(r.bb)}${r.ante ? ` · анте ${fmt(r.ante)}` : ''}</span><span>Стол № ${r.id}</span></div>
-        <div class="room-meta" style="margin-top:6px"><span>${r.players}/${r.maxSeats} игроков ${r.names.length ? '· ' + esc(r.names.slice(0, 3).join(', ')) : ''}</span>${r.paused ? '<span class="tag gold">⏸ пауза</span>' : r.playing ? '<span class="tag green">идёт игра</span>' : '<span class="tag">ожидание</span>'}</div>
+        <div class="room-meta" style="margin-top:6px"><span>${r.players}/${r.maxSeats} игроков${r.bots ? ` (🤖 ${r.bots})` : ''} ${r.names.length ? '· ' + esc(r.names.slice(0, 3).join(', ')) : ''}</span>${r.paused ? '<span class="tag gold">⏸ пауза</span>' : r.playing ? '<span class="tag green">идёт игра</span>' : '<span class="tag">ожидание</span>'}</div>
       </div>`;
     }).join('');
   }
@@ -474,6 +474,7 @@
         ${act}
         <div class="ring"><div class="ava" style="background:${avBg(p.avatar)}">${esc(p.avatar)}</div><div class="timer"></div></div>
         <div class="plate"><div class="nm">${p.me ? 'Вы' : esc(p.name)}${p.isHost ? ' 👑' : ''}</div><div class="st">${stackTxt}</div></div>
+        ${p.bot ? `<div class="bot-tag lv-${p.bot}" title="Бот: ${BOT_LV[p.bot] || ''}">БОТ</div>` : ''}
         ${!p.connected ? '<div class="discon">нет связи</div>' : ''}
         ${p.best && h && (h.street === 'showdown' || h.finished) && !p.folded ? `<div class="best">${esc(p.best.desc)}</div>` : ''}
       </div>`;
@@ -524,9 +525,10 @@
     // кнопки над столом
     const me = st.mySeat >= 0 ? st.seats[st.mySeat] : null;
     $('#standBtn').hidden = !me;
+    $('#botsBtn').hidden = !(st.room.isHost || !st.seats.some(p => p && p.isHost && p.connected));
     const paused = !!st.room.paused;
     $('#pauseBtn').hidden = !(me || st.room.isHost);
-    $('#pauseBtn').textContent = paused ? '▶ Продолжить' : '⏸ Пауза';
+    $('#pauseBtn').innerHTML = paused ? '▶<span class="tt"> Продолжить</span>' : '⏸<span class="tt"> Пауза</span>';
     $('#pauseBtn').classList.toggle('on', paused);
     $('#pauseBanner').hidden = !paused;
     $('#pauseWho').textContent = paused ? `${st.room.pausedBy || 'Игрок'} поставил игру на паузу` : '';
@@ -771,6 +773,10 @@
           <option value="time:15">Каждые 15 минут</option>
         </select></div>
       </div>
+      <div class="grid2">
+        <div class="field"><label>🤖 Боты</label><select class="select" id="crBots">${[0, 1, 2, 3, 4, 5].map(v => `<option value="${v}">${v ? v + ' ' + (v === 1 ? 'бот' : v < 5 ? 'бота' : 'ботов') : 'Без ботов'}</option>`).join('')}</select></div>
+        <div class="field"><label>Сложность ботов</label><select class="select" id="crBotLv"><option value="easy">😊 Лёгкие</option><option value="medium" selected>😐 Средние</option><option value="hard">😈 Сложные</option><option value="mixed">🎲 Разные</option></select></div>
+      </div>
       <div class="field"><label>Пароль (для приватной комнаты)</label><input class="input" id="crPass" maxlength="24" placeholder="Оставьте пустым для открытой комнаты"></div>
       <label class="check"><input type="checkbox" id="crIp" checked> Каждый игрок со своего IP (одно место на один IP-адрес)</label>
       <div class="buyin-note" id="crBuy"></div>
@@ -789,7 +795,8 @@
       send('createRoom', {
         name: m.querySelector('#crName').value, mode: md, sb, bb, ante: Math.round(bb * +m.querySelector('#crAnte').value),
         startStack: bb * +m.querySelector('#crStack').value, maxSeats: +m.querySelector('#crSeats').value, turnTime: +m.querySelector('#crTime').value,
-        levelMode: (m.querySelector('#crLevel').value.split(':')[0]), levelEvery: +(m.querySelector('#crLevel').value.split(':')[1] || 0), password: m.querySelector('#crPass').value, oneIp: m.querySelector('#crIp').checked
+        levelMode: (m.querySelector('#crLevel').value.split(':')[0]), levelEvery: +(m.querySelector('#crLevel').value.split(':')[1] || 0), password: m.querySelector('#crPass').value, oneIp: m.querySelector('#crIp').checked,
+        bots: +m.querySelector('#crBots').value, botLevel: m.querySelector('#crBotLv').value
       });
       closeModal();
     };
@@ -805,6 +812,26 @@
     m.querySelector(prefill ? '#jPass' : '#jId').focus();
     m.addEventListener('keydown', e => { if (e.key === 'Enter') go2(); });
   }
+  // ───────── Боты ─────────
+  const BOT_LV = { easy: 'лёгкий', medium: 'средний', hard: 'сложный' };
+  function botsModal() {
+    const st = S.st; if (!st) return;
+    const bots = st.seats.filter(p => p && p.bot);
+    const free = st.seats.filter(p => !p).length;
+    const canAdd = free > 0 && !(st.room.mode === 'tournament' && st.room.started);
+    const m = modal(`${head('🤖 Боты за столом')}
+      <p class="muted" style="margin-top:-6px">Боты играют по-настоящему: считают шансы, блефуют, повышают. Их фишки не берутся с вашего баланса.</p>
+      ${bots.length ? `<div class="bot-list">${bots.map(p => `<div class="bot-row"><span class="ava" style="background:${avBg(p.avatar)}">${esc(p.avatar)}</span><div class="bot-info"><b>${esc(p.name)}</b><small><span class="bot-tag lv-${p.bot} static">${BOT_LV[p.bot]}</span> ${fmt(p.stack)}</small></div><button class="btn btn-ghost" data-rm="${p.i}">Убрать</button></div>`).join('')}</div>` : '<p class="muted">Ботов пока нет.</p>'}
+      ${canAdd ? `<div class="grid2" style="margin-top:14px">
+        <div class="field"><label>Сколько добавить</label><select class="select" id="bCnt">${Array.from({ length: Math.min(5, free) }, (_, k) => `<option value="${k + 1}">${k + 1}</option>`).join('')}</select></div>
+        <div class="field"><label>Сложность</label><select class="select" id="bLv"><option value="easy">😊 Лёгкие</option><option value="medium" selected>😐 Средние</option><option value="hard">😈 Сложные</option><option value="mixed">🎲 Разные</option></select></div>
+      </div>` : `<p class="muted">${free ? 'Турнир уже идёт — добавить ботов нельзя.' : 'Свободных мест нет.'}</p>`}
+      <div class="foot">${bots.length ? '<button class="btn btn-ghost" id="bRmAll">Убрать всех</button>' : ''}${canAdd ? '<button class="btn btn-gold" id="bAdd">Добавить</button>' : '<button class="btn btn-gold" data-close>Готово</button>'}</div>`);
+    m.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { send('bots', { action: 'remove', seat: +b.dataset.rm }); closeModal(); });
+    if (m.querySelector('#bRmAll')) m.querySelector('#bRmAll').onclick = () => { send('bots', { action: 'removeAll' }); closeModal(); };
+    if (m.querySelector('#bAdd')) m.querySelector('#bAdd').onclick = () => { send('bots', { action: 'add', count: +m.querySelector('#bCnt').value, level: m.querySelector('#bLv').value }); closeModal(); };
+  }
+
   // ───────── Восстановление пароля ─────────
   function recoveryModal(code) {
     const m = modal(`${head('🔑 Код восстановления')}
@@ -1148,6 +1175,7 @@
       send('leaveRoom');
     };
     $('#standBtn').onclick = () => send('stand');
+    $('#botsBtn').onclick = botsModal;
     $('#pauseBtn').onclick = () => send('pause', { on: !(S.st && S.st.room.paused) });
     $('#resumeBtn').onclick = () => send('pause', { on: false });
     $('#rebuyBtn').onclick = () => send('rebuy');

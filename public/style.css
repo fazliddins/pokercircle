@@ -659,3 +659,21 @@ input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 
 .rc-row b { color: var(--gold2); letter-spacing: 2px; font-family: ui-monospace, Consolas, monospace; font-size: 15px; cursor: pointer; }
 .rc-row b.rc-hidden { filter: blur(5px); }
 .rc-row .btn { height: 28px; padding: 0 10px; font-size: 12px; }
+
+/* ───────── Боты ───────── */
+.seat .bot-tag { position: absolute; left: 50%; bottom: -16px; transform: translateX(-50%); z-index: 4; }
+.bot-tag { font-size: 10px; font-weight: 800; letter-spacing: .08em; padding: 2px 7px; border-radius: 7px; color: #10131c; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,.4); }
+.seat.side-left .bot-tag, .seat.side-mid .bot-tag { left: var(--rh, 37px); }
+.seat.side-right .bot-tag { left: auto; right: var(--rh, 37px); transform: translateX(50%); }
+.bot-tag.lv-easy { background: #7fdc9a; } .bot-tag.lv-medium { background: #f3d48a; } .bot-tag.lv-hard { background: #ff7b8a; }
+.bot-tag.static { position: static; transform: none; font-size: 11px; }
+#stage.portrait .seat .bot-tag { font-size: 13px; bottom: -20px; }
+.bot-list { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto; }
+.bot-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 11px; background: rgba(255,255,255,.04); border: 1px solid var(--line); }
+.bot-row .ava { width: 32px; height: 32px; font-size: 17px; flex: none; }
+.bot-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.bot-info b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bot-info small { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 8px; }
+.bot-row .btn { height: 30px; padding: 0 10px; font-size: 12px; }
+@media (max-width: 620px) { .table-top { gap: 5px; } .table-top .btn { padding: 0 9px; font-size: 12px; height: 32px; } }
+@media (max-width: 620px) { .table-top .tt { display: none; } .table-top .btn { min-width: 40px; } }
