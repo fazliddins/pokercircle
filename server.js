@@ -194,6 +194,8 @@ function leaderboard() {
 }
 const pick = a => a[Math.floor(Math.random() * a.length)];
 const chance = x => Math.random() < x;
+// боты выглядят как обычные игроки: такие же аватарки
+const BOT_AVATARS = ['🦁', '🐯', '🦊', '🐼', '🐨', '🐸', '🐺', '🦅', '🐶', '🐱', '🐻', '🦄', '🐲', '🐵', '🐧', '🦉'];
 const clean = (s, n) => String(s || '').replace(/[<>]/g, '').trim().slice(0, n);
 
 // ───────────────────────── Комната / стол ─────────────────────────
@@ -211,7 +213,7 @@ class Room {
     this.startStack = o.startStack;
     this.maxSeats = Math.min(6, Math.max(2, o.maxSeats || 6));
     this.turnTime = Math.min(90, Math.max(10, o.turnTime || 30));
-    this.oneIp = !!o.oneIp;
+    this.oneIp = false;   // вход по номеру телефона — общий Wi-Fi не мешает играть
     // рост блайндов: levelMode 'time' (каждые N минут) или 'hands' (каждые N раздач); levelEvery 0 — без роста
     this.levelMode = o.levelMode === 'hands' ? 'hands' : 'time';
     this.levelEvery = Math.max(0, Math.min(100, Math.floor(+o.levelEvery || 0)));
@@ -399,7 +401,7 @@ class Room {
       do { name = pick(Bots.NAMES); n++; } while (used.has(name) && n < 50);
       used.add(name);
       this.seats[seat] = {
-        pid: 'bot:' + crypto.randomBytes(4).toString('hex'), name, avatar: '🤖', ip: 'bot', stack: this.startStack, paid: true, connected: true,
+        pid: 'bot:' + crypto.randomBytes(4).toString('hex'), name, avatar: pick(BOT_AVATARS.filter(a => !this.seats.some(q => q && q.avatar === a))) || pick(BOT_AVATARS), ip: 'bot', stack: this.startStack, paid: true, connected: true,
         sitOut: false, inHand: false, cards: [], folded: false, allIn: false, bet: 0, total: 0, acted: false,
         lastAction: '', revealed: false, best: null, winAmount: 0, rebuys: 0, leaving: false, discAt: 0, bot: { level: L }
       };
@@ -1090,7 +1092,7 @@ const handlers = {
   quick(c) {
     let room = [...rooms.values()].find(r => !r.password && r.mode === 'cash' && r.seats.some(s => !s) && !(r.oneIp && r.seats.some(p => p && p.ip === c.user.ip)));
     if (!room) {
-      room = handlers.createRoom(c, { name: 'Быстрая игра', sb: 500, bb: 1000, ante: 100, startStack: 50000, mode: 'cash', oneIp: true, levelMode: 'hands', levelEvery: 10, bots: 3, botLevel: 'mixed' });
+      room = handlers.createRoom(c, { name: 'Быстрая игра', sb: 500, bb: 1000, ante: 100, startStack: 50000, mode: 'cash', oneIp: false, levelMode: 'hands', levelEvery: 10, bots: 3, botLevel: 'mixed' });
       const free = room.seats.findIndex(x => !x);
       if (free >= 0) send(c, 'askBuyIn', { seat: free });
       return;
