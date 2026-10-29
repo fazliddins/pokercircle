@@ -23,6 +23,30 @@ function lanIPs() {
   return out;
 }
 
+// ───────── Страница владельца: сброс пароля другу ─────────
+function adminPage(req, res, url) {
+  const q = new URL(req.url, 'http://x').searchParams;
+  if (!SECRET || q.get('key') !== SECRET) { res.writeHead(404); return res.end('Не найдено'); }
+  const k = encodeURIComponent(q.get('key'));
+  const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  let note = '';
+  if (url === '/admin/reset') {
+    const pr = profiles.get(String(q.get('id') || ''));
+    if (pr && !pr.tg) {
+      const tmp = String(100000 + crypto.randomInt(900000));
+      pr.salt = crypto.randomBytes(8).toString('hex'); pr.pinHash = hashPin(tmp, pr.salt); saveProfiles();
+      note = `<div class="ok">Новый пароль для <b>${esc(pr.name)}</b> (${esc(pr.phone)}): <b class="pw">${tmp}</b><br>Отправьте его другу сразу — пусть войдёт в течение 10 минут (бесплатный сервер засыпает, и сброс может потеряться). Потом он сменит пароль в кабинете.</div>`;
+    }
+  }
+  const rows = [...profiles.entries()].filter(([, p]) => !p.tg).sort((a, b) => (b[1].created || 0) - (a[1].created || 0)).map(([id, p]) =>
+    `<tr><td>${esc(p.avatar || '')} ${esc(p.name)}</td><td>${esc(p.phone)}</td><td>${(p.balance || 0).toLocaleString('ru-RU')}</td><td><a class="btn" href="/admin/reset?key=${k}&id=${encodeURIComponent(id)}" onclick="return confirm('Сбросить пароль игроку ${esc(p.name).replace(/'/g, '')}?')">Сбросить пароль</a></td></tr>`).join('');
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Игроки — PokerCircle</title>
+<style>body{font-family:system-ui,Segoe UI,Arial;background:#0b0d15;color:#eee;max-width:820px;margin:0 auto;padding:16px}h1{font-size:22px}table{width:100%;border-collapse:collapse}td,th{padding:10px 8px;border-bottom:1px solid #2a3045;text-align:left;font-size:14px}th{color:#8e96ab;font-weight:600}.btn{background:#e3bd6a;color:#1a1206;border-radius:9px;padding:7px 12px;font-weight:700;text-decoration:none;white-space:nowrap;display:inline-block}.ok{padding:14px;border-radius:12px;background:#163322;border:1px solid #2f7a4c;margin:12px 0;line-height:1.6}.pw{font-size:22px;letter-spacing:2px;color:#f7d282}.muted{color:#8e96ab;font-size:13px}@media(max-width:600px){td:nth-child(3),th:nth-child(3){display:none}}</style></head><body>
+<h1>👥 Игроки</h1><p class="muted">Если друг забыл пароль и не сохранил код восстановления, нажмите «Сбросить пароль» и отправьте ему новый пароль. Ссылку на эту страницу никому не давайте.</p>${note}
+<table><tr><th>Имя</th><th>Телефон</th><th>Баланс</th><th></th></tr>${rows || '<tr><td colspan="4" class="muted">Пока никто не входил после последнего перезапуска сервера</td></tr>'}</table></body></html>`);
+}
+
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split('?')[0]);
   if (url === '/api/info') {
@@ -30,6 +54,7 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({ ips: lanIPs(), port: PORT, publicUrl: Tunnel.url, sign: Sign.page, bot: TG.me ? TG.me.username : '' }));
   }
   if (url.startsWith('/studio')) { Studio.handle(req, res, url, SECRET); return; }
+  if (url === '/admin' || url === '/admin/reset') return adminPage(req, res, url);
   let file = path.normalize(path.join(PUBLIC, url === '/' ? 'index.html' : url));
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, data) => {
@@ -94,6 +119,11 @@ function unsign(str) {
     return JSON.parse(Buffer.from(b, 'base64url').toString('utf8'));
   } catch (e) { return null; }
 }
+// код восстановления пароля: 8 символов без похожих букв (0/O, 1/I)
+const RC_ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const genCode = () => { const b = crypto.randomBytes(8); let s = ''; for (let i = 0; i < 8; i++) s += RC_ABC[b[i] % RC_ABC.length]; return s.slice(0, 4) + '-' + s.slice(4); };
+const normCode = c => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/O/g, '0').replace(/I/g, '1');
+const resetTries = new Map();   // ip+номер → попытки (защита от подбора)
 const blankStats = () => ({ hands: 0, wins: 0, biggest: 0, won: 0, net: 0, best: null, games: [] });
 function backupOf(key) { const pr = profiles.get(key); return pr ? sign({ key, ...pr }) : ''; }
 function restoreFromBackup(bk, key) {
@@ -900,10 +930,13 @@ const handlers = {
       }
     } else return send(c, 'authError', { text: 'Введите номер телефона и пароль' });
     if (pr.balance == null) pr.balance = Wallet.START;
+    let newRc = false;
+    if (!pr.tg && !pr.rc) { pr.rc = genCode(); newRc = true; saveProfiles(); }
     if (d.avatar && d.avatar !== pr.avatar && !d.token) { pr.avatar = avatar; saveProfiles(); }
     c.user = { pid: 'u:' + key, key, name: pr.name, avatar: pr.avatar || avatar, ip: c.ip };
     send(c, 'welcome', {
       ip: c.ip, pid: c.user.pid, name: pr.name, avatar: c.user.avatar, phone: pr.phone || '', wallet: Wallet.info(pr), token: tokenFor(key, pr), backup: backupOf(key),
+      rc: pr.rc || '', newRc,
       stats: statOf(c.user.pid), lan: lanIPs(), port: PORT, publicUrl: Tunnel.url, sign: Sign.page, bot: TG.me ? TG.me.username : '', leaders: leaderboard()
     });
     broadcastLobby();
@@ -915,6 +948,22 @@ const handlers = {
     const watch = rooms.get(String(d.roomId || ''));
     if (watch && (!watch.password || watch.hostPid === c.user.pid)) joinRoom(c, watch);
     else if (d.roomId) send(c, 'left', {});
+  },
+  // восстановление пароля по коду (без входа)
+  resetPw(c, d) {
+    let ph = String(d.phone || '').replace(/\D/g, ''); if (ph.length === 9) ph = '998' + ph;
+    const key = 'p' + ph, tk = c.ip + '|' + key, now = Date.now();
+    const t = (resetTries.get(tk) || []).filter(x => now - x < 15 * 60000);
+    if (t.length >= 6) return send(c, 'resetResult', { ok: false, text: 'Слишком много попыток. Подождите 15 минут.' });
+    t.push(now); resetTries.set(tk, t);
+    const pw = String(d.password || '');
+    if (pw.length < 4) return send(c, 'resetResult', { ok: false, text: 'Новый пароль — минимум 4 символа' });
+    const pr = profiles.get(key) || restoreFromBackup(d.backup, key);
+    if (!pr) return send(c, 'resetResult', { ok: false, text: 'Номер не найден' });
+    if (!pr.rc || normCode(d.code) !== normCode(pr.rc)) return send(c, 'resetResult', { ok: false, text: 'Неверный код восстановления' });
+    pr.salt = crypto.randomBytes(8).toString('hex'); pr.pinHash = hashPin(pw, pr.salt); pr.rc = genCode();   // старый код больше не работает
+    saveProfiles(); resetTries.delete(tk);
+    send(c, 'resetResult', { ok: true, text: 'Пароль изменён — входим…' });
   },
   profile(c, d) {
     c.user.avatar = clean(d.avatar, 8) || c.user.avatar;
@@ -1004,7 +1053,7 @@ WS.attach(server, (c, req) => {
   c.on('message', raw => {
     let m; try { m = JSON.parse(raw); } catch (e) { return; }
     if (!m || typeof m.t !== 'string') return;
-    if (m.t !== 'hello' && !c.user) return;
+    if (m.t !== 'hello' && m.t !== 'resetPw' && !c.user) return;
     const fn = handlers[m.t];
     if (fn) try { fn(c, m.d || {}); } catch (e) { console.error('Ошибка обработки', m.t, e); }
   });
