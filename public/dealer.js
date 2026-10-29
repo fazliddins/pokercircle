@@ -239,7 +239,7 @@
     back: null, front: null, speech: null, speechTimer: null, talkTimer: null,
     mode: 'photo',
     markupFull() {
-      if (this.mode === 'photo') return `<div class="dealer-photo hero"><img src="dealer.webp" alt="Дилер Алиса"></div>`;
+      if (this.mode === 'photo') return `<div class="dealer-photo hero"><img src="dealer2.webp" alt="Дилер Алиса"></div>`;
       return `<div style="position:relative;width:100%;aspect-ratio:320/360">
         <div style="position:absolute;inset:0" class="dealer back dmini">${uniq(BACK)}</div>
         <div style="position:absolute;inset:0" class="dealer front dmini">${uniq(FRONT)}</div></div>`;
@@ -249,8 +249,9 @@
       this.front = document.createElement('div'); this.front.className = 'dealer front'; this.front.innerHTML = uniq(FRONT);
       this.speech = document.createElement('div'); this.speech.className = 'speech hide';
       this.speech.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg><span></span>`;
-      this.pBack = document.createElement('div'); this.pBack.className = 'dealer-photo back'; this.pBack.innerHTML = '<div class="ph-body"><img class="ph-base" src="dealer-base.webp" alt=""><div class="ph-head"><img src="dealer-head.webp" alt=""><img class="ph-mouth" src="dealer-mouth.webp" alt=""><img class="ph-jaw" src="dealer-jaw.webp" alt=""><img class="ph-blink2" src="dealer-blink2.webp" alt=""><img class="ph-blink" src="dealer-blink.webp" alt=""></div><img class="ph-armR" src="dealer-armR.webp" alt=""><img class="ph-armL" src="dealer-armL.webp" alt=""></div>';
-      this.pFront = document.createElement('div'); this.pFront.className = 'dealer-photo front'; this.pFront.innerHTML = '<div class="ph-body"><img class="ph-base" src="dealer-base.webp" alt=""><img class="ph-armR" src="dealer-armR.webp" alt=""><img class="ph-armL" src="dealer-armL.webp" alt=""></div>';
+      this.pBack = document.createElement('div'); this.pBack.className = 'dealer-photo back'; const ARMS = '<div class="ph-arms"></div>';
+      this.pBack.innerHTML = '<div class="ph-body"><img class="ph-base" src="dealer2-top.webp" alt="">' + ARMS + '<div class="ph-head"><img src="dealer2-head.webp" alt=""><img class="ph-mouth" src="dealer2-mouth.webp" alt=""><img class="ph-jaw" src="dealer2-jaw.webp" alt=""><img class="ph-blink2" src="dealer2-blink2.webp" alt=""><img class="ph-blink" src="dealer2-blink.webp" alt=""></div></div>';
+      this.pFront = document.createElement('div'); this.pFront.className = 'dealer-photo front'; this.pFront.innerHTML = '<div class="ph-body">' + ARMS + '</div>';
       stage.appendChild(this.back); stage.appendChild(this.front); stage.appendChild(this.pBack); stage.appendChild(this.pFront); stage.appendChild(this.speech);
       this.speech.insertAdjacentHTML('beforeend', '<i class="bars"><b></b><b></b><b></b><b></b></i>');
       this.setMode(this.mode);
@@ -276,7 +277,7 @@
             const r = Math.random();
             if (r < .45) this.look((Math.random() * 2 - 1) * .8, 0);
             else if (r < .7) this.cls('tilt', true), setTimeout(() => this.cls('tilt', false), 2200);
-            else if (r < .85) this.gesture();
+            else if (r < .85) { this.gesture(); this.playFrames([1, 2, 1, 0], 110); }
             else this.look(0, 0);
           }
           idle();
@@ -308,8 +309,19 @@
         this.talkTimer = setTimeout(() => this.talk(false), Math.min(4000, 600 + text.length * 55));
       }
     },
+    // кадры движения рук: 0 — покой, 5 — конец взмаха (рука плавно сгибается в запястье)
+    frame(k) {
+      const pos = (k / 5 * 100) + '% 0';
+      [this.pBack, this.pFront].forEach(e => { if (!e) return; const a = e.querySelector('.ph-arms'); if (a) a.style.backgroundPosition = pos; });
+    },
+    playFrames(seq, ms) {
+      clearInterval(this.frT); let i = 0;
+      this.frame(seq[0]);
+      this.frT = setInterval(() => { i++; if (i >= seq.length) { clearInterval(this.frT); return; } this.frame(seq[i]); }, ms);
+    },
     flick() {
       // один взмах руки — одна карта
+      this.playFrames([1, 2, 3, 4, 5, 0], 45);
       [this.pBack, this.pFront].forEach(e => { if (!e) return; e.classList.remove('flick'); void e.offsetWidth; e.classList.add('flick'); });
       clearTimeout(this.flickT); this.flickT = setTimeout(() => this.cls('flick', false), 420);
     },
