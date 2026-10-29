@@ -487,13 +487,13 @@ input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 
 @media (max-width: 980px) { .howto .panel:nth-child(2) { grid-column: auto; } .pub-link { flex-direction: column; align-items: stretch; } .pub-link .qr { align-self: center; } }
 
 /* ───────── Вертикальный стол для телефона ───────── */
-#stage.portrait .table { left: 35px; top: 290px; width: 650px; height: 650px; }
+#stage.portrait .table { left: 35px; top: 290px; width: 650px; height: 760px; }
 #stage.portrait .felt { inset: 30px; }
 #stage.portrait .felt::after { inset: 70px; }
-#stage.portrait .board-zone { top: 605px; gap: 8px; padding: 10px 12px; }
+#stage.portrait .board-zone { top: 668px; gap: 8px; padding: 10px 12px; }
 #stage.portrait .dealer-photo { left: 211px; top: 16px; }
 #stage.portrait .dealer { left: 220px; top: 66px; }
-#stage.portrait .pause-banner { top: 605px; }
+#stage.portrait .pause-banner { top: 668px; }
 #stage.portrait .speech { left: 470px; top: 40px; }
 #stage.portrait .seat .ring { width: 88px; height: 88px; }
 #stage.portrait .seat .plate { min-width: 150px; }
@@ -686,5 +686,5 @@ input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 
 #stage.portrait .seat.col .plate .st { font-size: 18px; }
 #stage.portrait .seat.col .discon { right: 10px; }
 /* телефон: общие карты чуть компактнее — между ними и картами игроков всегда есть зазор */
-#stage.portrait .board-zone { transform: translate(-50%, -50%) scale(.86); }
+#stage.portrait .board-zone { transform: translate(-50%, -50%) scale(.92); }
 #stage.portrait .seat.col + .hole .card, #stage.portrait .hole:not(.mine) .card { width: 48px; height: 68px; }
