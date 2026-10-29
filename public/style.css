@@ -487,14 +487,14 @@ input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 
 @media (max-width: 980px) { .howto .panel:nth-child(2) { grid-column: auto; } .pub-link { flex-direction: column; align-items: stretch; } .pub-link .qr { align-self: center; } }
 
 /* ───────── Вертикальный стол для телефона ───────── */
-#stage.portrait .table { left: 35px; top: 290px; width: 650px; height: 760px; }
+#stage.portrait .table { left: 105px; top: 292px; width: 570px; height: 776px; }
 #stage.portrait .felt { inset: 30px; }
-#stage.portrait .felt::after { inset: 70px; }
-#stage.portrait .board-zone { top: 668px; gap: 8px; padding: 10px 12px; }
-#stage.portrait .dealer-photo { left: 211px; top: 16px; }
-#stage.portrait .dealer { left: 220px; top: 66px; }
-#stage.portrait .pause-banner { top: 668px; }
-#stage.portrait .speech { left: 470px; top: 40px; }
+#stage.portrait .felt::after { inset: 60px; }
+#stage.portrait .board-zone { top: 678px; gap: 8px; padding: 10px 12px; }
+#stage.portrait .dealer-photo { left: 241px; top: 16px; }
+#stage.portrait .dealer { left: 250px; top: 66px; }
+#stage.portrait .pause-banner { top: 678px; }
+#stage.portrait .speech { left: 520px; top: 40px; }
 #stage.portrait .seat .ring { width: 88px; height: 88px; }
 #stage.portrait .seat .plate { min-width: 150px; }
 #stage.portrait .seat .plate .nm { font-size: 17px; }
@@ -612,14 +612,14 @@ input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 
 .dealer-photo .ph-blink, .dealer-photo .ph-blink2, .dealer-photo .ph-mouth { opacity: 0; }
 .dealer-photo.blink .ph-blink2 { animation: blinkHalf .26s linear; }
 .dealer-photo.blink .ph-blink { animation: blinkFull .26s linear; }
-.dealer-photo.talk .ph-mouth { opacity: 1; }
-.dealer-photo.talk .ph-jaw { animation: jawTalk .17s ease-in-out infinite alternate; }
-.dealer-photo.talk .ph-head { animation: headLife 7.5s ease-in-out infinite, headTalk 1.6s ease-in-out infinite; }
+.dealer-photo .ph-mouth { opacity: calc(var(--jaw, 0) * 1.3); }
+.dealer-photo .ph-jaw { transform: translateY(calc(var(--jaw, 0) * .38%)); }
+.dealer-photo.talk .ph-head { animation: headLife 7.5s ease-in-out infinite, headTalk 2.4s ease-in-out infinite; }
 .dealer-photo.tilt .ph-head { animation: headTilt 2.2s ease-in-out; }
 .dealer-photo.flick .ph-body { animation: phBreathe 4.2s ease-in-out infinite, phLean .3s ease-in-out; }
 .dealer-photo.front .ph-head { display: none; }
 @keyframes headLife { 0%, 100% { transform: none; } 25% { transform: rotate(1.2deg) translateY(.3%); } 55% { transform: rotate(-.9deg); } 80% { transform: rotate(.5deg) translateY(-.2%); } }
-@keyframes headTalk { 0%, 100% { scale: 1; } 30% { scale: 1.004 1.008; } 60% { scale: .998 1; } }
+@keyframes headTalk { 0%, 100% { scale: 1; } 40% { scale: 1.002 1.004; } }
 @keyframes headTilt { 0%, 100% { transform: none; } 35%, 70% { transform: rotate(4deg) translate(1%, .4%); } }
 @keyframes blinkHalf { 0%, 100% { opacity: 0; } 15%, 30% { opacity: 1; } 31%, 70% { opacity: 0; } 71%, 85% { opacity: 1; } }
 @keyframes blinkFull { 0%, 30% { opacity: 0; } 31%, 70% { opacity: 1; } 71%, 100% { opacity: 0; } }

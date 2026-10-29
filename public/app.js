@@ -344,9 +344,9 @@
     land: { W: 1100, H: 740, CX: 550, CY: 441, RX: 505, RY: 244, MID: { x: 550, y: 405 }, DH: { x: 513, y: 278 }, POT: { x: 470, y: 484 }, PILL: { x: 590 }, STREET: 446,
       ME: { hole: { x: 550, y: 590 }, bet: { x: 700, y: 600 }, btn: { x: 420, y: 640 } },
       LAYOUT: { 2: [180, 330], 3: [180, 262, 98], 4: [180, 250, 320, 90], 5: [180, 240, 300, 60, 120], 6: [180, 236, 292, 332, 64, 122] } },
-    port: { W: 720, H: 1240, CX: 360, CY: 670, RX: 306, RY: 368, MID: { x: 360, y: 668 }, DH: { x: 318, y: 334 }, POT: { x: 248, y: 772 }, PILL: { x: 410 }, STREET: 584,
-      ME: { seat: { x: 360, y: 1162 }, hole: { x: 360, y: 1040 }, bet: { x: 360, y: 930 }, btn: { x: 238, y: 1072 } },
-      SLOTS: { L1: { x: 62, y: 812 }, L2: { x: 50, y: 566 }, L3: { x: 118, y: 398 }, R3: { x: 602, y: 398 }, R2: { x: 670, y: 566 }, R1: { x: 658, y: 812 } },
+    port: { W: 780, H: 1240, CX: 390, CY: 680, RX: 300, RY: 372, MID: { x: 390, y: 678 }, DH: { x: 348, y: 334 }, POT: { x: 280, y: 780 }, PILL: { x: 440 }, STREET: 592,
+      ME: { seat: { x: 390, y: 1166 }, hole: { x: 390, y: 1046 }, bet: { x: 390, y: 936 }, btn: { x: 268, y: 1078 } },
+      SLOTS: { L1: { x: 62, y: 830 }, L2: { x: 50, y: 590 }, L3: { x: 110, y: 380 }, R3: { x: 670, y: 380 }, R2: { x: 730, y: 590 }, R1: { x: 718, y: 830 } },
       PLAN: { 2: ['R3'], 3: ['L2', 'R2'], 4: ['L2', 'L3', 'R2'], 5: ['L2', 'L3', 'R3', 'R2'], 6: ['L1', 'L2', 'L3', 'R3', 'R2'] },
       LAYOUT: { 2: [180, 330], 3: [180, 250, 110], 4: [180, 250, 325, 75], 5: [180, 235, 300, 60, 125], 6: [180, 230, 283, 335, 50, 120] } }
   };
@@ -380,12 +380,12 @@
   const dirOf = p => (p.x < CX ? 1 : -1);
   function holePos(i) {
     if (isMe(i)) return G.ME.hole;
-    if (G.SLOTS) { const p = seatPos(i); return { x: p.x + dirOf(p) * 74, y: p.y - 2 }; }
+    if (G.SLOTS) { const p = seatPos(i); return { x: p.x + dirOf(p) * 92, y: p.y - 2 }; }
     return lerp(seatPos(i), MID, .3);
   }
   function betPos(i) {
     if (isMe(i)) return G.ME.bet;
-    if (G.SLOTS) { const p = seatPos(i); return { x: p.x + dirOf(p) * 145, y: p.y + 62 }; }
+    if (G.SLOTS) { const p = seatPos(i); return { x: p.x + dirOf(p) * 150, y: p.y + 58 }; }
     return lerp(seatPos(i), MID, .47);
   }
   function btnPos(i) {

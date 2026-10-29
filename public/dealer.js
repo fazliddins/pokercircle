@@ -222,7 +222,8 @@
           const b = await this.buf(k);
           await new Promise(res => {
             const src = c.createBufferSource(), g = c.createGain();
-            g.gain.value = Voice.volume; src.buffer = b; src.connect(g).connect(c.destination);
+            if (!this.an || this.an.context !== c) { this.an = c.createAnalyser(); this.an.fftSize = 512; this.an.smoothingTimeConstant = 0.2; this.an.connect(c.destination); }
+            g.gain.value = Voice.volume; src.buffer = b; src.connect(g).connect(this.an);
             src.onended = res; this.src = src; src.start();
             setTimeout(res, b.duration * 1000 + 400);
           });
@@ -295,7 +296,32 @@
     },
     els(sel) { return [this.back, this.front].filter(Boolean).flatMap(e => [...e.querySelectorAll(sel)]); },
     cls(name, on) { [this.back, this.front, this.pBack, this.pFront].forEach(e => e && e.classList.toggle(name, on)); },
-    talk(on) { this.cls('talk', on); this.speech && this.speech.classList.toggle('talking', on); },
+    talk(on) {
+      this.cls('talk', on); this.speech && this.speech.classList.toggle('talking', on);
+      if (on && !this.lipRaf) this.lipLoop();
+    },
+    // губы двигаются по громкости голоса: громче звук — шире рот, в паузах рот закрыт
+    lipLoop() {
+      const buf = new Uint8Array(512); let jaw = 0, t = 0;
+      const step = () => {
+        const talking = this.pBack && this.pBack.classList.contains('talk');
+        let target = 0;
+        if (talking && Pack.playing && Pack.an) {
+          Pack.an.getByteTimeDomainData(buf);
+          let sum = 0; for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+          const rms = Math.sqrt(sum / buf.length);
+          target = Math.min(1, Math.max(0, (rms - 0.02) * 6));
+        } else if (talking) {
+          // голос устройства не даёт звук для анализа — плавная «речь» по слогам
+          t += 0.016; target = Math.max(0, Math.sin(t * 11) * 0.5 + Math.sin(t * 4.3) * 0.3 + 0.1);
+        }
+        jaw += (target - jaw) * (target > jaw ? 0.55 : 0.22);   // быстро открывается, мягко закрывается
+        if (this.pBack) this.pBack.style.setProperty('--jaw', jaw.toFixed(3));
+        if (!talking && jaw < 0.01) { this.lipRaf = 0; if (this.pBack) this.pBack.style.setProperty('--jaw', '0'); return; }
+        this.lipRaf = requestAnimationFrame(step);
+      };
+      this.lipRaf = requestAnimationFrame(step);
+    },
     say(text, kind, voice) {
       if (!this.speech) return;
       // студийные голоса ещё грузятся (сервер просыпается) — ждём их, а не говорим голосом-роботом
