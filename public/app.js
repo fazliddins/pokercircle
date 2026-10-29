@@ -346,7 +346,7 @@
       LAYOUT: { 2: [180, 330], 3: [180, 262, 98], 4: [180, 250, 320, 90], 5: [180, 240, 300, 60, 120], 6: [180, 236, 292, 332, 64, 122] } },
     port: { W: 720, H: 1160, CX: 360, CY: 615, RX: 306, RY: 318, MID: { x: 360, y: 605 }, DH: { x: 318, y: 334 }, POT: { x: 248, y: 705 }, PILL: { x: 410 }, STREET: 520,
       ME: { seat: { x: 360, y: 1088 }, hole: { x: 360, y: 968 }, bet: { x: 360, y: 860 }, btn: { x: 238, y: 1000 } },
-      SLOTS: { L1: { x: 92, y: 790 }, L2: { x: 66, y: 590 }, L3: { x: 104, y: 400 }, R3: { x: 616, y: 400 }, R2: { x: 654, y: 590 }, R1: { x: 628, y: 790 } },
+      SLOTS: { L1: { x: 92, y: 795 }, L2: { x: 52, y: 572 }, L3: { x: 104, y: 380 }, R3: { x: 616, y: 380 }, R2: { x: 668, y: 572 }, R1: { x: 628, y: 795 } },
       PLAN: { 2: ['R3'], 3: ['L2', 'R2'], 4: ['L2', 'L3', 'R2'], 5: ['L2', 'L3', 'R3', 'R2'], 6: ['L1', 'L2', 'L3', 'R3', 'R2'] },
       LAYOUT: { 2: [180, 330], 3: [180, 250, 110], 4: [180, 250, 325, 75], 5: [180, 235, 300, 60, 125], 6: [180, 230, 283, 335, 50, 120] } }
   };
@@ -380,12 +380,12 @@
   const dirOf = p => (p.x < CX ? 1 : -1);
   function holePos(i) {
     if (isMe(i)) return G.ME.hole;
-    if (G.SLOTS) { const p = seatPos(i); const mid = Math.abs(p.y - MID.y) < 60; return mid ? { x: p.x + dirOf(p) * 74, y: p.y - 50 } : { x: p.x + dirOf(p) * 82, y: p.y - 4 }; }
+    if (G.SLOTS) { const p = seatPos(i); return { x: p.x + dirOf(p) * 74, y: p.y - 2 }; }
     return lerp(seatPos(i), MID, .3);
   }
   function betPos(i) {
     if (isMe(i)) return G.ME.bet;
-    if (G.SLOTS) { const p = seatPos(i); return { x: p.x + dirOf(p) * 118, y: p.y + 66 }; }
+    if (G.SLOTS) { const p = seatPos(i); return { x: p.x + dirOf(p) * 145, y: p.y + 62 }; }
     return lerp(seatPos(i), MID, .47);
   }
   function btnPos(i) {

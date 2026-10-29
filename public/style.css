@@ -685,3 +685,6 @@ input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 
 #stage.portrait .seat.col .plate .nm { font-size: 15px; max-width: 116px; }
 #stage.portrait .seat.col .plate .st { font-size: 18px; }
 #stage.portrait .seat.col .discon { right: 10px; }
+/* телефон: общие карты чуть компактнее — между ними и картами игроков всегда есть зазор */
+#stage.portrait .board-zone { transform: translate(-50%, -50%) scale(.86); }
+#stage.portrait .seat.col + .hole .card, #stage.portrait .hole:not(.mine) .card { width: 48px; height: 68px; }
