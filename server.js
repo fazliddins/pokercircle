@@ -8,6 +8,7 @@ const os = require('os');
 const crypto = require('crypto');
 const WS = require('./ws');
 const P = require('./poker');
+const Bots = require('./bots');
 const Studio = require('./studio');
 
 if (process.env.POKER_FAST) { const st = global.setTimeout; global.setTimeout = (f, ms, ...a) => st(f, Math.ceil((ms || 0) / 60), ...a); }
@@ -192,6 +193,7 @@ function leaderboard() {
     .sort((a, b) => b.balance - a.balance).slice(0, 10);
 }
 const pick = a => a[Math.floor(Math.random() * a.length)];
+const chance = x => Math.random() < x;
 const clean = (s, n) => String(s || '').replace(/[<>]/g, '').trim().slice(0, n);
 
 // ───────────────────────── Комната / стол ─────────────────────────
@@ -231,7 +233,7 @@ class Room {
       sb: this.sb, bb: this.bb, ante: this.ante, startStack: this.startStack,
       players: this.seats.filter(Boolean).length, maxSeats: this.maxSeats,
       started: this.started, playing: !!(this.hand && !this.hand.finished), paused: !!this.paused, blindsUp: this.levelEvery > 0,
-      names: this.seats.filter(Boolean).map(p => p.name)
+      names: this.seats.filter(Boolean).map(p => p.name), bots: this.seats.filter(p => p && p.bot).length
     };
   }
   conns() { return [...clients].filter(c => c.roomId === this.id); }
@@ -274,7 +276,7 @@ class Room {
         ip: p.ip, isHost: p.pid === this.hostPid, rebuys: p.rebuys, me: p.pid === pid,
         cards: p.inHand ? (show ? p.cards : p.cards.map(() => null)) : [],
         best: show && p.best ? { desc: p.best.desc, cards: p.best.cards } : null,
-        win: p.winAmount || 0, leaving: p.leaving
+        win: p.winAmount || 0, leaving: p.leaving, bot: p.bot ? p.bot.level : null
       };
     });
     let hand = null, you = null;
@@ -380,13 +382,75 @@ class Room {
     this.broadcast(); broadcastLobby();
   }
 
+  // ——— боты ———
+  humans() { return this.seats.filter(p => p && !p.bot); }
+  addBots(count, level) {
+    const lv = ['easy', 'medium', 'hard'];
+    const used = new Set(this.seats.filter(Boolean).map(p => p.name));
+    const added = [];
+    for (let k = 0; k < count; k++) {
+      const free = this.seats.map((p, i) => (p ? -1 : i)).filter(i => i >= 0);
+      if (free.length <= (this.humans().length ? 0 : 1)) break;     // одно место оставляем живому игроку
+      if (this.mode === 'tournament' && this.started) break;
+      // садим ботов вразброс, чтобы живым было где сесть рядом с дилером
+      const seat = free[Math.floor(Math.random() * free.length)];
+      const L = level === 'mixed' || !lv.includes(level) ? pick(lv) : level;
+      let name; let n = 0;
+      do { name = pick(Bots.NAMES); n++; } while (used.has(name) && n < 50);
+      used.add(name);
+      this.seats[seat] = {
+        pid: 'bot:' + crypto.randomBytes(4).toString('hex'), name, avatar: '🤖', ip: 'bot', stack: this.startStack, paid: true, connected: true,
+        sitOut: false, inHand: false, cards: [], folded: false, allIn: false, bet: 0, total: 0, acted: false,
+        lastAction: '', revealed: false, best: null, winAmount: 0, rebuys: 0, leaving: false, discAt: 0, bot: { level: L }
+      };
+      added.push(`${name} (${Bots.LEVELS[L].name.toLowerCase()})`);
+    }
+    if (added.length) this.say(`За стол садятся боты: ${added.join(', ')}.`, 'info');
+    this.broadcast(); broadcastLobby(); this.maybeStart();
+    return added.length;
+  }
+  removeBot(seat) {
+    const p = this.seats[seat]; if (!p || !p.bot) return;
+    this.stand(p.pid, 'silent');
+    if (this.seats[seat] === p && !p.leaving) this.seats[seat] = null;
+    this.pushChat({ from: 'Система', text: `Бот ${p.name} ${p.leaving ? 'уйдёт после раздачи' : 'покинул стол'}`, system: true });
+    this.broadcast(); broadcastLobby();
+  }
+  botMove(i) {
+    const h = this.hand, p = this.seats[i];
+    if (!h || h.finished || h.busy || h.toAct !== i || !p || !p.bot || this.paused) return;
+    const toCall = Math.max(0, Math.min(h.currentBet - p.bet, p.stack));
+    const pot = this.seats.reduce((a, q) => a + (q ? q.total : 0), 0) + (h.deadChips || 0);
+    const others = this.seats.filter((q, j) => q && j !== i && q.inHand && !q.folded);
+    const othersCanAct = others.some(q => !q.allIn);
+    // позиция: действует последним на улице, если после него никто из живых не ходит до баттона
+    const after = []; for (let k = 1; k < this.maxSeats; k++) { const j = (i + k) % this.maxSeats; if (j === (this.button + 1) % this.maxSeats && k > 1) break; const q = this.seats[j]; if (q && q.inHand && !q.folded && !q.allIn) after.push(j); if (j === this.button) break; }
+    const v = {
+      hole: p.cards, board: h.board, toCall, pot, stack: p.stack, myBet: p.bet, currentBet: h.currentBet,
+      minRaise: h.minRaise, bb: this.bb, nOpp: others.length, canRaise: !p.acted && p.stack > toCall && othersCanAct,
+      street: h.street, inPosition: i === this.button || after.length === 0,
+      facingRaises: h.log.filter(x => / (Рейз|Ставка|Олл-ин)/.test(x) && !x.startsWith(p.name + ':')).length
+    };
+    let d;
+    try { d = Bots.decide(p.bot.level, v); } catch (e) { console.error('Бот ошибся:', e); d = { type: toCall ? 'fold' : 'check' }; }
+    if (d.type === 'check' && toCall > 0) d = { type: 'fold' };
+    let err = this.act(p.pid, d.type, d.amount);
+    if (err) err = this.act(p.pid, toCall > 0 ? 'call' : 'check');
+    if (err) this.act(p.pid, 'fold');
+  }
+  botChat(p, kind) {
+    if (!p || !p.bot || !chance(kind === 'allin' ? 0.3 : 0.18)) return;
+    setTimeout(() => this.pushChat({ from: p.name, avatar: p.avatar, text: pick(Bots.CHAT[kind]) }), 900 + Math.random() * 1500);
+  }
+
   maybeStart() {
     if (this.paused) return;
     if (this.hand && !this.hand.finished) return;
     if (this.nextTimer) return;
     if (this.mode === 'tournament' && !this.started) return;
     const ready = this.seats.filter(p => p && p.stack > 0 && !p.sitOut && p.connected).length;
-    if (ready >= 2) {
+    const humanReady = this.seats.some(p => p && !p.bot && p.stack > 0 && !p.sitOut && p.connected);
+    if (ready >= 2 && humanReady) {
       this.nextTimer = setTimeout(() => { this.nextTimer = null; this.startHand(); }, 4000);
     }
   }
@@ -423,7 +487,7 @@ class Room {
       if (!p) return;
       Object.assign(p, { inHand: false, cards: [], folded: false, allIn: false, bet: 0, total: 0, acted: false, lastAction: p.sitOut ? 'Пропуск' : '', revealed: false, best: null, winAmount: 0, refund: 0 });
     });
-    if (eligible.length < 2) { this.hand = null; this.broadcast(); broadcastLobby(); return; }
+    if (eligible.length < 2 || !eligible.some(p => !p.bot)) { this.hand = null; this.broadcast(); broadcastLobby(); return; }
     eligible.forEach(p => (p.inHand = true));
     this.handNo++;
     const inH = p => p.inHand;
@@ -502,6 +566,12 @@ class Room {
     h.deadline = Date.now() + ms; h.pausedLeft = 0;
     clearTimeout(this.timer);
     const id = h.id, street = h.street;
+    const bp = this.seats[i];
+    if (bp && bp.bot) {
+      clearTimeout(this.botTimer);
+      const big = h.currentBet - bp.bet > this.bb * 4;
+      this.botTimer = setTimeout(() => this.botMove(i), Math.min(ms - 300, Bots.thinkMs(bp.bot.level, big)));
+    }
     this.timer = setTimeout(() => {
       if (this.paused || !this.hand || this.hand.id !== id || this.hand.street !== street || this.hand.toAct !== i) return;
       const q = this.seats[i];
@@ -595,6 +665,7 @@ class Room {
     const major = /олл-ин|повышает|ставит/.test(say);
     this.say(say, major ? 'major' : 'action', voice);
     this.sfx(sfx, { seat: i, allin: p.allIn });
+    if (p.allIn && p.bot) this.botChat(p, 'allin');
     this.proceed(i);
     if (this.hand === h && !h.finished && h.toAct === -1) this.broadcast();
     return null;
@@ -747,6 +818,8 @@ class Room {
     clearTimeout(this.timer);
     // статистика и история
     const winners = this.seats.filter(p => p && p.winAmount > 0);
+    for (const w of winners) if (w.bot && w.winAmount > this.bb * 8) this.botChat(w, 'win');
+    for (const q of this.seats) if (q && q.bot && q.inHand && q.total > this.bb * 15 && !q.winAmount) this.botChat(q, 'bigLoss');
     for (const w of winners) {
       const st = statOf(w.pid);
       st.wins++; st.won += w.winAmount; st.biggest = Math.max(st.biggest, w.winAmount);
@@ -813,7 +886,10 @@ class Room {
         return;
       }
     } else {
-      busted.forEach(p => this.pushChat({ from: 'Система', text: `${p.name}: фишки закончились — нажмите «Докупиться»`, system: true }));
+      busted.forEach(p => {
+        if (p.bot) { p.stack = this.startStack; p.rebuys++; this.pushChat({ from: 'Система', text: `Бот ${p.name} докупает фишки`, system: true }); }
+        else this.pushChat({ from: 'Система', text: `${p.name}: фишки закончились — нажмите «Докупиться»`, system: true });
+      });
     }
     this.hand = null;
     this.seats.forEach(p => { if (p) { p.inHand = false; p.cards = []; p.lastAction = p.sitOut ? 'Пропуск' : ''; p.winAmount = 0; p.bet = 0; p.total = 0; p.revealed = false; p.best = null; } });
@@ -846,6 +922,7 @@ class Room {
     if (this.started) return 'Турнир уже идёт';
     this.seats.forEach((p, i) => {
       if (!p || p.paid) return;
+      if (p.bot) { p.paid = true; return; }
       if (Wallet.charge(p.pid, this.startStack)) { p.paid = true; Wallet.inPlay(p.pid, this.id, this.startStack); }
       else { this.say(`${p.name}: недостаточно фишек для участия.`, 'info'); this.seats[i] = null; }
     });
@@ -999,6 +1076,9 @@ const handlers = {
     rooms.set(room.id, room);
     joinRoom(c, room);
     room.pushChat({ from: 'Система', text: `Комната создана. Номер стола: ${room.id}${room.password ? ' (приватная, нужен пароль)' : ''}`, system: true });
+    const nb = Math.max(0, Math.min(room.maxSeats - 1, Math.floor(+d.bots || 0)));
+    if (nb) room.addBots(nb, String(d.botLevel || 'medium'));
+    return room;
   },
   joinRoom(c, d) {
     const room = rooms.get(String(d.id || '').trim());
@@ -1009,7 +1089,12 @@ const handlers = {
   },
   quick(c) {
     let room = [...rooms.values()].find(r => !r.password && r.mode === 'cash' && r.seats.some(s => !s) && !(r.oneIp && r.seats.some(p => p && p.ip === c.user.ip)));
-    if (!room) return handlers.createRoom(c, { name: 'Быстрая игра', sb: 500, bb: 1000, ante: 100, startStack: 50000, mode: 'cash', oneIp: true, levelMode: 'hands', levelEvery: 10 });
+    if (!room) {
+      room = handlers.createRoom(c, { name: 'Быстрая игра', sb: 500, bb: 1000, ante: 100, startStack: 50000, mode: 'cash', oneIp: true, levelMode: 'hands', levelEvery: 10, bots: 3, botLevel: 'mixed' });
+      const free = room.seats.findIndex(x => !x);
+      if (free >= 0) send(c, 'askBuyIn', { seat: free });
+      return;
+    }
     joinRoom(c, room);
     const free = room.seats.findIndex(s => !s);
     if (free >= 0 && room.seatOf(c.user.pid) < 0) send(c, 'askBuyIn', { seat: free });
@@ -1017,6 +1102,17 @@ const handlers = {
   leaveRoom(c) { leaveRoom(c); send(c, 'left', {}); },
   sit(c, d) { const r = rooms.get(c.roomId); if (!r) return; const e = r.sit(c, +d.seat, +d.amount || 0); if (e) send(c, 'error', { text: e }); },
   stand(c) { const r = rooms.get(c.roomId); if (r) r.stand(c.user.pid); },
+  bots(c, d) {
+    const r = rooms.get(c.roomId); if (!r) return;
+    const hostHere = r.seats.some(p => p && p.pid === r.hostPid && p.connected) || r.conns().some(x => x.user.pid === r.hostPid);
+    if (c.user.pid !== r.hostPid && hostHere) return send(c, 'error', { text: 'Ботами управляет создатель стола' });
+    if (d.action === 'add') {
+      if (r.mode === 'tournament' && r.started) return send(c, 'error', { text: 'Турнир уже идёт' });
+      const n = r.addBots(Math.max(1, Math.min(5, Math.floor(+d.count || 1))), String(d.level || 'medium'));
+      if (!n) send(c, 'error', { text: 'Нет свободных мест для ботов' });
+    } else if (d.action === 'remove') r.removeBot(+d.seat);
+    else if (d.action === 'removeAll') r.seats.forEach((p, i) => { if (p && p.bot) r.removeBot(i); });
+  },
   action(c, d) {
     const r = rooms.get(c.roomId); if (!r) return;
     const e = r.act(c.user.pid, String(d.type), +d.amount);
@@ -1088,10 +1184,10 @@ WS.attach(server, (c, req) => {
 setInterval(() => {
   let changed = false;
   for (const [id, r] of rooms) {
-    const empty = !r.conns().length && !r.seats.some(Boolean);
+    const empty = !r.conns().length && !r.seats.some(p => p && !p.bot);
     if (!empty) { r.emptySince = 0; continue; }
     if (!r.emptySince) r.emptySince = Date.now();
-    if (Date.now() - r.emptySince > 20000) { clearTimeout(r.timer); clearTimeout(r.turnTimer); rooms.delete(id); changed = true; }
+    if (Date.now() - r.emptySince > 20000) { clearTimeout(r.timer); clearTimeout(r.nextTimer); clearTimeout(r.botTimer); r.hand = null; rooms.delete(id); changed = true; }
   }
   if (changed) broadcastLobby();
 }, 5000).unref();
