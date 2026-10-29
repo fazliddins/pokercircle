@@ -155,6 +155,7 @@
       case 'error': toast(d.text, true); break;
       case 'toast': toast(d.text); break;
       case 'needPassword': passwordModal(d); break;
+      case 'askBuyIn': setTimeout(() => buyInModal(d.seat), 400); break;
       case 'publicUrl': { const changed = d.url && d.url !== S.publicUrl; S.publicUrl = d.url; if (d.sign) S.sign = d.sign; renderLan(); if (changed) toast('🌍 Ссылка для друзей готова!'); break; }
       case 'authError':
         $('#loginErr').hidden = false; $('#loginErr').textContent = d.text; $('#loginBtn').disabled = false;
@@ -237,7 +238,7 @@
       setTimeout(() => Dealer.say(`Добро пожаловать, ${S.me.name}. Я Алиса, и сегодня карты раздаю я.`, 'major', ['hello']), 400);
       setTimeout(() => {
         DealerVoice.load();
-        if (!cfg.voice || DealerVoice.isNatural() || store.get('voiceTip', 0) > 2) return;
+        if (!cfg.voice || DealerPack.ready() || DealerVoice.isNatural() || store.get('voiceTip', 0) > 2) return;
         store.set('voiceTip', store.get('voiceTip', 0) + 1);
         const ua = navigator.userAgent;
         if (/iphone|ipad/i.test(ua)) toast('🎙️ Для красивого голоса Алисы: Настройки → Универсальный доступ → Устный контент → Голоса → Русский → «Милена (улучшенный)» — скачайте её');
@@ -338,8 +339,8 @@
     land: { W: 1100, H: 740, CX: 550, CY: 441, RX: 505, RY: 244, MID: { x: 550, y: 405 }, DH: { x: 506, y: 272 }, POT: { x: 470, y: 484 }, PILL: { x: 590 }, STREET: 446,
       ME: { hole: { x: 550, y: 590 }, bet: { x: 700, y: 600 }, btn: { x: 420, y: 640 } },
       LAYOUT: { 2: [180, 330], 3: [180, 262, 98], 4: [180, 250, 320, 90], 5: [180, 240, 300, 60, 120], 6: [180, 236, 292, 332, 64, 122] } },
-    port: { W: 720, H: 1160, CX: 360, CY: 700, RX: 300, RY: 405, MID: { x: 360, y: 690 }, DH: { x: 311, y: 330 }, POT: { x: 290, y: 790 }, PILL: { x: 410 }, STREET: 600,
-      ME: { hole: { x: 360, y: 985 }, bet: { x: 525, y: 975 }, btn: { x: 240, y: 1040 } },
+    port: { W: 720, H: 1160, CX: 360, CY: 615, RX: 306, RY: 318, MID: { x: 360, y: 605 }, DH: { x: 311, y: 330 }, POT: { x: 300, y: 705 }, PILL: { x: 405 }, STREET: 520,
+      ME: { seat: { x: 360, y: 1088 }, hole: { x: 360, y: 968 }, bet: { x: 360, y: 860 }, btn: { x: 238, y: 1000 } },
       LAYOUT: { 2: [180, 330], 3: [180, 250, 110], 4: [180, 250, 325, 75], 5: [180, 235, 300, 60, 125], 6: [180, 230, 283, 335, 50, 120] } }
   };
   let G = GEO.land, W = G.W, H = G.H, CX = G.CX, CY = G.CY, RX = G.RX, RY = G.RY, MID = G.MID, LAYOUT = G.LAYOUT, DEALER_HAND = G.DH, POT = G.POT;
@@ -354,7 +355,10 @@
     const rel = (i - base + n) % n;
     return (LAYOUT[n] || LAYOUT[6])[rel];
   }
-  function seatPos(i) { const a = seatAngle(i) * Math.PI / 180; return { x: CX + RX * Math.sin(a), y: CY - RY * Math.cos(a) }; }
+  function seatPos(i) {
+    if (G.ME.seat && isMe(i)) return G.ME.seat;
+    const a = seatAngle(i) * Math.PI / 180; return { x: CX + RX * Math.sin(a), y: CY - RY * Math.cos(a) };
+  }
   const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
   function isMe(i) { return S.st && S.st.mySeat === i; }
   function holePos(i) { if (isMe(i)) return G.ME.hole; return lerp(seatPos(i), MID, .3); }
@@ -368,12 +372,13 @@
     const wrap = $('#stageWrap'), st = $('#stage');
     const w = wrap.clientWidth, h = wrap.clientHeight;
     if (!w || !h) return;
-    const want = w / h < 0.85 ? 'port' : 'land';
+    const phonePortrait = window.innerWidth <= 980 && window.innerHeight > window.innerWidth;
+    const want = phonePortrait || w / h < 0.85 ? 'port' : 'land';
     // на телефоне подгоняем зону стола под реальную высоту панели действий
     if (window.innerWidth <= 980) {
       const bar = $('#actionArea').firstElementChild, tb = $('#tabbar');
       const bottom = (bar ? bar.offsetHeight + 14 : 0) + (tb && tb.offsetHeight ? tb.offsetHeight : 0);
-      const top = ($('.table-top') ? $('.table-top').offsetHeight + 10 : 46);
+      const tt = $('.table-top'), top = tt ? Math.round(tt.getBoundingClientRect().bottom - wrap.parentElement.getBoundingClientRect().top + 6) : 46;
       wrap.style.cssText = `inset:${top}px 0 ${bottom}px 0 !important`;
       if (depth < 2 && Math.abs(wrap.clientHeight - h) > 2) return fitStage(depth + 1);
     } else wrap.style.cssText = '';
@@ -451,7 +456,8 @@
         continue;
       }
       const turn = h && h.toAct === i;
-      const cls = ['seat', p.me ? 'me' : '', turn ? 'turn' : '', p.folded ? 'folded' : '', winners.has(i) && h.finished ? 'winner' : '', p.stack === 0 && !p.inHand ? 'out' : ''].join(' ');
+      const side = p.me ? 'mid' : pos.x > CX + 40 ? 'right' : pos.x < CX - 40 ? 'left' : 'mid';
+      const cls = ['seat', 'side-' + side, p.me ? 'me' : '', turn ? 'turn' : '', p.folded ? 'folded' : '', winners.has(i) && h.finished ? 'winner' : '', p.stack === 0 && !p.inHand ? 'out' : ''].join(' ');
       let act = '';
       if (h && !h.finished && !p.inHand && !p.lastAction && p.stack > 0) act = `<div class="act">Ждёт раздачи</div>`;
       if (p.lastAction) {
@@ -794,6 +800,34 @@
     m.querySelector(prefill ? '#jPass' : '#jId').focus();
     m.addEventListener('keydown', e => { if (e.key === 'Enter') go2(); });
   }
+  // ───────── С какой суммой сесть за стол ─────────
+  function buyInModal(seat) {
+    const st = S.st; if (!st) return send('sit', { seat });
+    const r = st.room;
+    if (r.mode !== 'cash') return send('sit', { seat });       // в турнире стек у всех одинаковый
+    const bal = Math.floor((S.wallet && S.wallet.balance) || 0);
+    const min = r.bb * 10;
+    if (bal < min) return toast(`На балансе ${fmt(bal)} — нужно минимум ${fmt(min)}. Заберите бонус в кабинете.`, true);
+    const step = Math.max(1, r.sb || 1);
+    const max = bal;
+    let val = Math.min(Math.max(r.startStack, min), max);
+    const m = modal(`${head('С какой суммой сесть?')}
+      <p class="muted" style="margin-top:-6px">Блайнды ${fmt(r.sb)} / ${fmt(r.bb)}. На балансе: <b style="color:var(--gold2)">${fmt(bal)}</b></p>
+      <div class="buyin-val" id="biVal"></div>
+      <input type="range" class="buyin-range" id="biRange" min="${min}" max="${max}" step="${step}" value="${val}">
+      <div class="buyin-lim"><span>мин ${fmt(min)}</span><span>макс ${fmt(max)}</span></div>
+      <div class="buyin-quick">
+        <button data-v="${min}">Мин</button><button data-v="${Math.min(max, r.startStack)}">Стандарт</button>
+        <button data-v="${Math.max(min, Math.floor(bal / 2))}">½ баланса</button><button data-v="${max}">Всё</button>
+      </div>
+      <div class="foot"><button class="btn btn-ghost" data-close>Отмена</button><button class="btn btn-gold" id="biGo">Сесть за стол</button></div>`);
+    const rng = m.querySelector('#biRange'), out = m.querySelector('#biVal');
+    const show = () => { out.textContent = fmt(val); };
+    rng.oninput = () => { val = +rng.value; show(); };
+    m.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { val = +b.dataset.v; rng.value = val; show(); });
+    m.querySelector('#biGo').onclick = () => { send('sit', { seat, amount: val }); closeModal(); };
+    show();
+  }
   function passwordModal(d) {
     const m = modal(`${head('🔒 ' + esc(d.name))}
       <p class="muted" style="margin-top:-6px">${d.wrong ? '<span style="color:#ff6b7d">Неверный пароль.</span> ' : ''}Это приватная комната. Введите пароль.</p>
@@ -1004,7 +1038,7 @@
       if (cp) { const v = cp.dataset.copy; (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject()).then(() => toast('Скопировано'), () => { prompt('Скопируйте ссылку:', v); }); }
       const rc = e.target.closest('[data-room]');
       if (rc) { closeModal(); if (rc.dataset.room === S.roomId) go('table'); else send('joinRoom', { id: rc.dataset.room }); }
-      const sit = e.target.closest('.empty-seat.can'); if (sit) send('sit', { seat: +sit.dataset.sit });
+      const sit = e.target.closest('.empty-seat.can'); if (sit) buyInModal(+sit.dataset.sit);
       const a = e.target.closest('[data-a]'); if (a) doAction(a.dataset.a);
       const st = e.target.closest('[data-step]'); if (st && S.st && S.st.you) setRaise(S.raiseTo + (+st.dataset.step) * S.st.room.bb);
       const q = e.target.closest('[data-q]');

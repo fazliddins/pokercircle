@@ -249,7 +249,7 @@
       this.front = document.createElement('div'); this.front.className = 'dealer front'; this.front.innerHTML = uniq(FRONT);
       this.speech = document.createElement('div'); this.speech.className = 'speech hide';
       this.speech.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg><span></span>`;
-      this.pBack = document.createElement('div'); this.pBack.className = 'dealer-photo back'; this.pBack.innerHTML = '<div class="ph-body"><img class="ph-base" src="dealer-base.webp" alt=""><img class="ph-armR" src="dealer-armR.webp" alt=""><img class="ph-armL" src="dealer-armL.webp" alt=""></div>';
+      this.pBack = document.createElement('div'); this.pBack.className = 'dealer-photo back'; this.pBack.innerHTML = '<div class="ph-body"><img class="ph-base" src="dealer-base.webp" alt=""><div class="ph-head"><img src="dealer-head.webp" alt=""><img class="ph-mouth" src="dealer-mouth.webp" alt=""><img class="ph-jaw" src="dealer-jaw.webp" alt=""><img class="ph-blink2" src="dealer-blink2.webp" alt=""><img class="ph-blink" src="dealer-blink.webp" alt=""></div><img class="ph-armR" src="dealer-armR.webp" alt=""><img class="ph-armL" src="dealer-armL.webp" alt=""></div>';
       this.pFront = document.createElement('div'); this.pFront.className = 'dealer-photo front'; this.pFront.innerHTML = '<div class="ph-body"><img class="ph-base" src="dealer-base.webp" alt=""><img class="ph-armR" src="dealer-armR.webp" alt=""><img class="ph-armL" src="dealer-armL.webp" alt=""></div>';
       stage.appendChild(this.back); stage.appendChild(this.front); stage.appendChild(this.pBack); stage.appendChild(this.pFront); stage.appendChild(this.speech);
       this.speech.insertAdjacentHTML('beforeend', '<i class="bars"><b></b><b></b><b></b><b></b></i>');
@@ -258,6 +258,31 @@
       Voice.onEnd = () => this.talk(false);
       Pack.onStart = () => this.talk(true);
       Pack.onEnd = () => this.talk(false);
+      this.lifeLoop();
+    },
+    // живость: моргание, повороты головы, лёгкие жесты в паузах
+    lifeLoop() {
+      const blink = () => {
+        const e = this.pBack; if (!e) return;
+        e.classList.remove('blink'); void e.offsetWidth; e.classList.add('blink');
+        setTimeout(() => e.classList.remove('blink'), 260);
+        if (Math.random() < .2) setTimeout(blink, 340);   // иногда — двойное моргание
+      };
+      const nextBlink = () => { this.blinkT = setTimeout(() => { blink(); nextBlink(); }, 2200 + Math.random() * 3800); };
+      nextBlink();
+      const idle = () => {
+        this.idleT = setTimeout(() => {
+          if (!document.hidden && !this.pBack.classList.contains('dealing')) {
+            const r = Math.random();
+            if (r < .45) this.look((Math.random() * 2 - 1) * .8, 0);
+            else if (r < .7) this.cls('tilt', true), setTimeout(() => this.cls('tilt', false), 2200);
+            else if (r < .85) this.gesture();
+            else this.look(0, 0);
+          }
+          idle();
+        }, 3500 + Math.random() * 4500);
+      };
+      idle();
     },
     setMode(m) {
       this.mode = m === 'drawn' ? 'drawn' : 'photo';
@@ -300,7 +325,7 @@
       dx = Math.max(-1, Math.min(1, dx || 0)); dy = Math.max(-1, Math.min(1, dy || 0));
       this.els('.head').forEach(h => (h.style.transform = `rotate(${dx * 6}deg)`));
       this.els('.pupils').forEach(p => (p.style.transform = `translate(${dx * 2.2}px, ${dy * 1.4}px)`));
-      [this.pBack, this.pFront].forEach(e => e && e.style.setProperty('--look', dx * 4 + 'px'));
+      [this.pBack, this.pFront].forEach(e => { if (!e) return; e.style.setProperty('--look', dx * 4 + 'px'); e.style.setProperty('--hl', dx * 3.2 + 'deg'); e.style.setProperty('--hx', dx * 5 + 'px'); });
     }
   };
 
