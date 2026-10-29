@@ -449,7 +449,7 @@ input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 
 .dealer-photo .ph-armL { transform-origin: 5% 74%; animation: armLIdle 5.5s ease-in-out infinite; }
 .dealer-photo .ph-armR { transform-origin: 83% 82%; animation: armRIdle 3.8s ease-in-out infinite; }
 .dealer-photo.back { z-index: 1; }
-.dealer-photo.front { z-index: 3; clip-path: inset(80% -30% -40% -30%); }
+.dealer-photo.front { z-index: 3; }
 .dealer-photo.front .ph-base { visibility: hidden; }   /* руки и карты — поверх стола */
 .dealer-photo.flick .ph-armL { animation: armLFlick .3s cubic-bezier(.3, .6, .3, 1); }
 .dealer-photo.flick .ph-armR { animation: armRPass .3s ease-in-out; }
@@ -677,3 +677,11 @@ input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 
 .bot-row .btn { height: 30px; padding: 0 10px; font-size: 12px; }
 @media (max-width: 620px) { .table-top { gap: 5px; } .table-top .btn { padding: 0 9px; font-size: 12px; height: 32px; } }
 @media (max-width: 620px) { .table-top .tt { display: none; } .table-top .btn { min-width: 40px; } }
+/* руки перед бортом стола: от локтя вниз, без платья — борт не режет руки полосой */
+.dealer-photo .ph-arms.ph-armsF { top: 64.1%; height: 35.9%; background-image: url(dealer2-armsF.webp); }
+/* телефон: у соперников табличка под аватаркой (узко, ничего не перекрывает) */
+#stage.portrait .seat.col { flex-direction: column; transform: translate(-50%, -44px); }
+#stage.portrait .seat.col .plate { margin: -12px 0 0; padding: 14px 8px 6px; border-radius: 12px; min-width: 118px; max-width: 132px; }
+#stage.portrait .seat.col .plate .nm { font-size: 15px; max-width: 116px; }
+#stage.portrait .seat.col .plate .st { font-size: 18px; }
+#stage.portrait .seat.col .discon { right: 10px; }

@@ -344,8 +344,10 @@
     land: { W: 1100, H: 740, CX: 550, CY: 441, RX: 505, RY: 244, MID: { x: 550, y: 405 }, DH: { x: 513, y: 278 }, POT: { x: 470, y: 484 }, PILL: { x: 590 }, STREET: 446,
       ME: { hole: { x: 550, y: 590 }, bet: { x: 700, y: 600 }, btn: { x: 420, y: 640 } },
       LAYOUT: { 2: [180, 330], 3: [180, 262, 98], 4: [180, 250, 320, 90], 5: [180, 240, 300, 60, 120], 6: [180, 236, 292, 332, 64, 122] } },
-    port: { W: 720, H: 1160, CX: 360, CY: 615, RX: 306, RY: 318, MID: { x: 360, y: 605 }, DH: { x: 318, y: 334 }, POT: { x: 300, y: 705 }, PILL: { x: 405 }, STREET: 520,
+    port: { W: 720, H: 1160, CX: 360, CY: 615, RX: 306, RY: 318, MID: { x: 360, y: 605 }, DH: { x: 318, y: 334 }, POT: { x: 248, y: 705 }, PILL: { x: 410 }, STREET: 520,
       ME: { seat: { x: 360, y: 1088 }, hole: { x: 360, y: 968 }, bet: { x: 360, y: 860 }, btn: { x: 238, y: 1000 } },
+      SLOTS: { L1: { x: 92, y: 790 }, L2: { x: 66, y: 590 }, L3: { x: 104, y: 400 }, R3: { x: 616, y: 400 }, R2: { x: 654, y: 590 }, R1: { x: 628, y: 790 } },
+      PLAN: { 2: ['R3'], 3: ['L2', 'R2'], 4: ['L2', 'L3', 'R2'], 5: ['L2', 'L3', 'R3', 'R2'], 6: ['L1', 'L2', 'L3', 'R3', 'R2'] },
       LAYOUT: { 2: [180, 330], 3: [180, 250, 110], 4: [180, 250, 325, 75], 5: [180, 235, 300, 60, 125], 6: [180, 230, 283, 335, 50, 120] } }
   };
   let G = GEO.land, W = G.W, H = G.H, CX = G.CX, CY = G.CY, RX = G.RX, RY = G.RY, MID = G.MID, LAYOUT = G.LAYOUT, DEALER_HAND = G.DH, POT = G.POT;
@@ -360,16 +362,35 @@
     const rel = (i - base + n) % n;
     return (LAYOUT[n] || LAYOUT[6])[rel];
   }
+  function slotOf(i) {
+    if (!G.SLOTS) return null;
+    const st = S.st, n = st ? st.room.maxSeats : 6, base = st && st.mySeat >= 0 ? st.mySeat : 0;
+    const rel = (i - base + n) % n;
+    if (rel === 0) return null;
+    return G.SLOTS[(G.PLAN[n] || G.PLAN[6])[rel - 1]] || null;
+  }
   function seatPos(i) {
     if (G.ME.seat && isMe(i)) return G.ME.seat;
+    if (!isMe(i) && G.SLOTS && !(S.st && S.st.mySeat < 0 && i === 0)) { const sl = slotOf(i); if (sl) return sl; }
     const a = seatAngle(i) * Math.PI / 180; return { x: CX + RX * Math.sin(a), y: CY - RY * Math.cos(a) };
   }
   const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
   function isMe(i) { return S.st && S.st.mySeat === i; }
-  function holePos(i) { if (isMe(i)) return G.ME.hole; return lerp(seatPos(i), MID, .3); }
-  function betPos(i) { if (isMe(i)) return G.ME.bet; return lerp(seatPos(i), MID, .47); }
+  // на телефоне: карты — перед табличкой со стороны центра, ставка — ниже, кнопка дилера — над кольцом
+  const dirOf = p => (p.x < CX ? 1 : -1);
+  function holePos(i) {
+    if (isMe(i)) return G.ME.hole;
+    if (G.SLOTS) { const p = seatPos(i); const mid = Math.abs(p.y - MID.y) < 60; return mid ? { x: p.x + dirOf(p) * 74, y: p.y - 50 } : { x: p.x + dirOf(p) * 82, y: p.y - 4 }; }
+    return lerp(seatPos(i), MID, .3);
+  }
+  function betPos(i) {
+    if (isMe(i)) return G.ME.bet;
+    if (G.SLOTS) { const p = seatPos(i); return { x: p.x + dirOf(p) * 118, y: p.y + 66 }; }
+    return lerp(seatPos(i), MID, .47);
+  }
   function btnPos(i) {
     if (isMe(i)) return G.ME.btn;
+    if (G.SLOTS) { const p = seatPos(i); return { x: p.x + dirOf(p) * 58, y: p.y - 40 }; }
     const s = seatPos(i), p = lerp(s, MID, .26); const vx = MID.x - s.x, vy = MID.y - s.y, l = Math.hypot(vx, vy) || 1;
     return { x: p.x - vy / l * 58, y: p.y + vx / l * 58 };
   }
@@ -462,7 +483,7 @@
       }
       const turn = h && h.toAct === i;
       const side = p.me ? 'mid' : pos.x > CX + 40 ? 'right' : pos.x < CX - 40 ? 'left' : 'mid';
-      const cls = ['seat', 'side-' + side, p.me ? 'me' : '', turn ? 'turn' : '', p.folded ? 'folded' : '', winners.has(i) && h.finished ? 'winner' : '', p.stack === 0 && !p.inHand ? 'out' : ''].join(' ');
+      const cls = ['seat', G.SLOTS && !p.me ? 'col' : 'side-' + side, p.me ? 'me' : '', turn ? 'turn' : '', p.folded ? 'folded' : '', winners.has(i) && h.finished ? 'winner' : '', p.stack === 0 && !p.inHand ? 'out' : ''].join(' ');
       let act = '';
       if (h && !h.finished && !p.inHand && !p.lastAction && p.stack > 0) act = `<div class="act">Ждёт раздачи</div>`;
       if (p.lastAction) {
@@ -474,7 +495,7 @@
         ${act}
         <div class="ring"><div class="ava" style="background:${avBg(p.avatar)}">${esc(p.avatar)}</div><div class="timer"></div></div>
         <div class="plate"><div class="nm">${p.me ? 'Вы' : esc(p.name)}${p.isHost ? ' 👑' : ''}</div><div class="st">${stackTxt}</div></div>
-        ${p.bot ? `<div class="bot-tag lv-${p.bot}" title="Бот: ${BOT_LV[p.bot] || ''}">БОТ</div>` : ''}
+
         ${!p.connected ? '<div class="discon">нет связи</div>' : ''}
         ${p.best && h && (h.street === 'showdown' || h.finished) && !p.folded ? `<div class="best">${esc(p.best.desc)}</div>` : ''}
       </div>`;
@@ -778,7 +799,6 @@
         <div class="field"><label>Сложность ботов</label><select class="select" id="crBotLv"><option value="easy">😊 Лёгкие</option><option value="medium" selected>😐 Средние</option><option value="hard">😈 Сложные</option><option value="mixed">🎲 Разные</option></select></div>
       </div>
       <div class="field"><label>Пароль (для приватной комнаты)</label><input class="input" id="crPass" maxlength="24" placeholder="Оставьте пустым для открытой комнаты"></div>
-      <label class="check"><input type="checkbox" id="crIp" checked> Каждый игрок со своего IP (одно место на один IP-адрес)</label>
       <div class="buyin-note" id="crBuy"></div>
       <div class="foot"><button class="btn btn-ghost" data-close>Отмена</button><button class="btn btn-gold" id="crGo">Создать</button></div>`);
     let md = mode;
@@ -795,7 +815,7 @@
       send('createRoom', {
         name: m.querySelector('#crName').value, mode: md, sb, bb, ante: Math.round(bb * +m.querySelector('#crAnte').value),
         startStack: bb * +m.querySelector('#crStack').value, maxSeats: +m.querySelector('#crSeats').value, turnTime: +m.querySelector('#crTime').value,
-        levelMode: (m.querySelector('#crLevel').value.split(':')[0]), levelEvery: +(m.querySelector('#crLevel').value.split(':')[1] || 0), password: m.querySelector('#crPass').value, oneIp: m.querySelector('#crIp').checked,
+        levelMode: (m.querySelector('#crLevel').value.split(':')[0]), levelEvery: +(m.querySelector('#crLevel').value.split(':')[1] || 0), password: m.querySelector('#crPass').value, oneIp: false,
         bots: +m.querySelector('#crBots').value, botLevel: m.querySelector('#crBotLv').value
       });
       closeModal();
@@ -1006,6 +1026,17 @@
   }
 
   // ───────── Профиль и настройки ─────────
+  function bonusText(ms) {
+    if (ms <= 0) return '🎁 Забрать бонус +20 000';
+    const t = Math.ceil(ms / 1000), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = t % 60;
+    return `🎁 Бонус через ${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  }
+  // обратный отсчёт бонуса идёт каждую секунду
+  setInterval(() => {
+    const b = document.getElementById('bonusBtn'); if (!b || S.view !== 'profile' || !S.wallet) return;
+    const left = Math.max(0, S.wallet.bonusIn - (Date.now() - S.wallet.at));
+    b.textContent = bonusText(left); b.disabled = left > 0;
+  }, 1000);
   function renderProfile() {
     const s = Object.assign({ hands: 0, wins: 0, biggest: 0, won: 0, net: 0, best: null, games: [] }, S.stats || {});
     const w = S.wallet || { balance: 0, bonusIn: 0, at: Date.now() };
@@ -1018,7 +1049,7 @@
       <div class="panel wallet-big">
         <i class="chip-ico"></i>
         <div style="flex:1;min-width:160px"><div class="v">${fmt(w.balance)}</div><div class="l">фишек на балансе · игровые, без денег</div></div>
-        <button class="btn btn-gold" id="bonusBtn" ${bonusLeft > 0 ? 'disabled' : ''}>🎁 ${bonusLeft > 0 ? 'Бонус через ' + Math.floor(bonusLeft / 3600000) + ' ч ' + Math.ceil(bonusLeft % 3600000 / 60000) + ' мин' : 'Забрать бонус +20 000'}</button>
+        <button class="btn btn-gold" id="bonusBtn" ${bonusLeft > 0 ? 'disabled' : ''}>${bonusText(bonusLeft)}</button>
       </div>
       <div class="panel" style="padding:18px;display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:14px">
         <div class="ava" style="width:78px;height:78px;font-size:40px;border:3px solid var(--gold);background:${avBg(S.me.avatar)}">${esc(S.me.avatar)}</div>
@@ -1074,11 +1105,11 @@
     $('#settingsBox').innerHTML = `<h2 style="margin:0 0 16px">Настройки</h2>
       <div class="panel">
         ${row('Внешность дилера', 'Фото — как на вашем макете; рисованная — с мимикой и движением губ', `<div class="seg" id="dealerSeg" style="width:240px"><button data-dm="photo" class="${cfg.dealerMode === 'photo' ? 'on' : ''}">Фото</button><button data-dm="drawn" class="${cfg.dealerMode === 'drawn' ? 'on' : ''}">Рисованная</button></div>`)}
-        ${row('Голос дилера', 'Алиса озвучивает раздачу, ставки и победителей', tg('voice'))}
+        ${row('Голос дилера', 'Дилер озвучивает раздачу, ставки и победителей', tg('voice'))}
         ${row('Голос', voices.length ? 'Выберите русский голос из установленных в системе' : '<span style="color:#ff8a98">Русские голоса не найдены. Установите русский язык речи в системе или откройте в Chrome/Edge.</span>',
       `<select class="select" id="voiceSel" style="width:240px">${['<option value="">Автовыбор (женский)</option>'].concat(voices.slice().sort((a, b) => DealerVoice.score(b) - DealerVoice.score(a)).map(v => `<option value="${esc(v.name)}" ${v.name === cfg.voiceName ? 'selected' : ''}>${DealerVoice.score(v) >= 40 ? '⭐ ' : ''}${esc(v.name)}</option>`)).join('')}</select>`)}
-        ${DealerPack.voices.length ? row('Голос Алисы', 'Студийный — живой записанный голос, одинаковый на всех устройствах', `<div class="seg" id="studioSeg" style="width:240px"><button data-st="1" class="${cfg.studio !== false ? 'on' : ''}">Студийный ✨</button><button data-st="0" class="${cfg.studio === false ? 'on' : ''}">Устройства</button></div>`) : ''}
-        ${DealerPack.voices.length && cfg.studio !== false ? row('Чей голос', 'Нажмите на имя — Алиса сразу заговорит этим голосом', `<div class="voice-pick">${DealerPack.voices.map(v => `<button data-av="${esc(v.id)}" class="${v.id === DealerPack.id ? 'on' : ''}">🎙️ ${esc(v.name)}</button>`).join('')}</div>`) : ''}
+        ${DealerPack.voices.length ? row('Голос дилера', 'Студийный — живой записанный голос, одинаковый на всех устройствах', `<div class="seg" id="studioSeg" style="width:240px"><button data-st="1" class="${cfg.studio !== false ? 'on' : ''}">Студийный ✨</button><button data-st="0" class="${cfg.studio === false ? 'on' : ''}">Устройства</button></div>`) : ''}
+        ${DealerPack.voices.length && cfg.studio !== false ? row('Чей голос', 'Нажмите на имя — дилер сразу заговорит этим голосом и представится своим именем', `<div class="voice-pick">${DealerPack.voices.map(v => `<button data-av="${esc(v.id)}" class="${v.id === DealerPack.id ? 'on' : ''}">🎙️ ${esc(v.name)}</button>`).join('')}</div>`) : ''}
         ${row('Манера речи', 'Бархатная — медленнее, ниже и с паузами; обычная — нейтрально', `<div class="seg" id="styleSeg" style="width:240px"><button data-vs="velvet" class="${cfg.voiceStyle === 'velvet' ? 'on' : ''}">Бархатная</button><button data-vs="normal" class="${cfg.voiceStyle !== 'velvet' ? 'on' : ''}">Обычная</button></div>`)}
         ${row('Сейчас говорит', DealerVoice.isNatural() ? '✅ Живой нейросетевой голос' : '⚠️ Голос звучит как робот. Откройте игру в <b>Microsoft Edge</b> — там есть живые голоса «Светлана» и «Дария» (Natural). На Android — Chrome, на iPhone — Safari.', `<b>${esc((DealerVoice.pick() || {}).name || 'нет')}</b>`)}
         ${row('Громкость голоса', '', rng('volume', 0, 1, .05))}

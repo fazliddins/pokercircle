@@ -172,7 +172,7 @@
 
   // ───────── Студийный голос: заранее записанные фразы (public/voice/*.mp3) ─────────
   const Pack = {
-    keys: null, name: '', id: '', voices: [], want: '', buffers: {}, queue: [], playing: false, use: true, onStart: null, onEnd: null, src: null,
+    keys: null, name: '', id: '', voices: [], want: '', buffers: {}, queue: [], playing: false, use: true, onStart: null, onEnd: null, src: null, loaded: false, loadP: null,
     ctx() { return window.pcAudio ? window.pcAudio() : null; },
     async load() {
       try {
@@ -181,8 +181,10 @@
         this.voices = (await r.json()).voices || [];
         this.select(this.want);
         if (this.onLoad) this.onLoad();
-      } catch (e) { }
+      } catch (e) { } finally { this.loaded = true; }
     },
+    // имя дилера = имя выбранного голоса (Алиса, Соня, Лили, Джессика)
+    dealerName() { return this.ready() && this.name ? this.name.split(/[\s(]/)[0] : 'Алиса'; },
     // выбрать голос по id (alisa, mira, marina…)
     select(id) {
       this.want = id || this.want;
@@ -232,7 +234,7 @@
     },
     stop() { this.queue = []; try { this.src && this.src.stop(); } catch (e) { } this.playing = false; this.onEnd && this.onEnd(); }
   };
-  Pack.load();
+  Pack.loadP = Pack.load();
 
   // ───────── Управление анимацией ─────────
   const Dealer = {
@@ -251,7 +253,7 @@
       this.speech.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg><span></span>`;
       this.pBack = document.createElement('div'); this.pBack.className = 'dealer-photo back'; const ARMS = '<div class="ph-arms"></div>';
       this.pBack.innerHTML = '<div class="ph-body"><img class="ph-base" src="dealer2-top.webp" alt="">' + ARMS + '<div class="ph-head"><img src="dealer2-head.webp" alt=""><img class="ph-mouth" src="dealer2-mouth.webp" alt=""><img class="ph-jaw" src="dealer2-jaw.webp" alt=""><img class="ph-blink2" src="dealer2-blink2.webp" alt=""><img class="ph-blink" src="dealer2-blink.webp" alt=""></div></div>';
-      this.pFront = document.createElement('div'); this.pFront.className = 'dealer-photo front'; this.pFront.innerHTML = '<div class="ph-body">' + ARMS + '</div>';
+      this.pFront = document.createElement('div'); this.pFront.className = 'dealer-photo front'; this.pFront.innerHTML = '<div class="ph-body"><div class="ph-arms ph-armsF"></div></div>';
       stage.appendChild(this.back); stage.appendChild(this.front); stage.appendChild(this.pBack); stage.appendChild(this.pFront); stage.appendChild(this.speech);
       this.speech.insertAdjacentHTML('beforeend', '<i class="bars"><b></b><b></b><b></b><b></b></i>');
       this.setMode(this.mode);
@@ -296,6 +298,14 @@
     talk(on) { this.cls('talk', on); this.speech && this.speech.classList.toggle('talking', on); },
     say(text, kind, voice) {
       if (!this.speech) return;
+      // студийные голоса ещё грузятся (сервер просыпается) — ждём их, а не говорим голосом-роботом
+      if (Pack.use && !Pack.loaded && Pack.loadP) { Pack.loadP.then(() => this.say(text, kind, voice)); return; }
+      const nm = Pack.dealerName();
+      if (nm !== 'Алиса') {
+        text = text.replace(/Алис(а|ы|е|у|ой)/g, nm);
+        // приветствие «Я Алиса» записано только голосом Алисы — у других дилеров своё приветствие без имени
+        if (Array.isArray(voice)) voice = voice.map(k => (k === 'hello' && !Pack.keys.has('hello_own') ? 'welcome_2' : k));
+      }
       this.speech.querySelector('span').textContent = text;
       this.speech.classList.remove('hide');
       clearTimeout(this.speechTimer);
