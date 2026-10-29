@@ -1035,10 +1035,17 @@ WS.attach(server, (c, req) => {
   });
 });
 
-// удаляем пустые комнаты через 30 минут
+// стол исчезает, когда все ушли: никого нет за столом и никто не смотрит (20 сек — на случай перезагрузки страницы)
 setInterval(() => {
-  for (const [id, r] of rooms) if (r.emptySince && Date.now() - r.emptySince > 30 * 60000 && !r.seats.some(Boolean)) rooms.delete(id);
-}, 60000).unref();
+  let changed = false;
+  for (const [id, r] of rooms) {
+    const empty = !r.conns().length && !r.seats.some(Boolean);
+    if (!empty) { r.emptySince = 0; continue; }
+    if (!r.emptySince) r.emptySince = Date.now();
+    if (Date.now() - r.emptySince > 20000) { clearTimeout(r.timer); clearTimeout(r.turnTimer); rooms.delete(id); changed = true; }
+  }
+  if (changed) broadcastLobby();
+}, 5000).unref();
 
 // ───────────────────────── Публичная ссылка (туннель Cloudflare) ─────────────────────────
 // Даёт адрес https://xxxx.trycloudflare.com, по которому можно зайти из любого места и с телефона.
