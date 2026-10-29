@@ -651,3 +651,11 @@ input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 
 .dealer-photo .ph-arms { position: absolute; left: 0; width: 100%; top: 76.41%; height: 23.59%; background: url(dealer2-arms.webp) 0 0 / 600% 100% no-repeat; }
 .dealer-photo .ph-base { position: absolute; inset: 0; width: 100%; height: 100%; }
 .dealer-photo.flick .ph-body { animation: phBreathe 4.2s ease-in-out infinite, phLean .3s ease-in-out; }
+
+/* ───────── Восстановление пароля ───────── */
+.forgot-link { display: block; margin: 12px auto 0; color: var(--gold2); font-size: 14px; background: none; border: 0; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.rc-code { font-size: 32px; font-weight: 800; letter-spacing: 4px; text-align: center; color: var(--gold2); padding: 16px; margin: 10px 0; border-radius: 14px; border: 1px dashed rgba(227, 189, 106, .6); background: rgba(227, 189, 106, .08); font-family: ui-monospace, Consolas, monospace; user-select: all; }
+.rc-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+.rc-row b { color: var(--gold2); letter-spacing: 2px; font-family: ui-monospace, Consolas, monospace; font-size: 15px; cursor: pointer; }
+.rc-row b.rc-hidden { filter: blur(5px); }
+.rc-row .btn { height: 28px; padding: 0 10px; font-size: 12px; }

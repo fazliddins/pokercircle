@@ -130,7 +130,8 @@
       case 'welcome':
         S.me.pid = d.pid; S.me.name = d.name; S.me.avatar = d.avatar; store.set('name', d.name); store.set('avatar', d.avatar);
         S.token = d.token; store.set('token', d.token); saveBackup(d.backup); S.leaders = d.leaders || [];
-        S.me.phone = d.phone || ''; if (d.wallet) setWallet(d.wallet);
+        S.me.phone = d.phone || ''; S.me.rc = d.rc || ''; if (d.wallet) setWallet(d.wallet);
+        if (d.newRc && d.rc) setTimeout(() => recoveryModal(d.rc), 900);
         if (!S.loggedIn || !$('#login').hidden) enterApp();
         updateUser(); if (S.view === 'profile') renderProfile();
         S.ip = d.ip; S.lan = d.lan; S.port = d.port; S.stats = d.stats; if (d.publicUrl) S.publicUrl = d.publicUrl; if (d.sign) S.sign = d.sign;
@@ -155,6 +156,7 @@
       case 'error': toast(d.text, true); break;
       case 'toast': toast(d.text); break;
       case 'needPassword': passwordModal(d); break;
+      case 'resetResult': onResetResult(d); break;
       case 'askBuyIn': setTimeout(() => buyInModal(d.seat), 400); break;
       case 'publicUrl': { const changed = d.url && d.url !== S.publicUrl; S.publicUrl = d.url; if (d.sign) S.sign = d.sign; renderLan(); if (changed) toast('🌍 Ссылка для друзей готова!'); break; }
       case 'authError':
@@ -198,6 +200,7 @@
       mode = m;
       $$('#authTabs button').forEach(b => b.classList.toggle('on', b.dataset.auth === m));
       $$('.reg-only').forEach(x => (x.hidden = m !== 'reg'));
+      $$('.login-only').forEach(x => (x.hidden = m === 'reg'));
       $('#loginBtn').textContent = m === 'reg' ? 'Зарегистрироваться' : 'Войти';
       $('#loginPin').autocomplete = m === 'reg' ? 'new-password' : 'current-password';
       $('#loginErr').hidden = true;
@@ -219,6 +222,8 @@
       send('hello', { phone, password: pw, register: mode === 'reg', name: n, avatar: S.me.avatar, backup: bk ? bk[1] : '', roomId: S.roomId });
     };
     $('#loginBtn').onclick = doLogin;
+    $('#forgotBtn').onclick = () => forgotModal();
+    S.doLogin = doLogin;
     ['#loginPhone', '#loginName', '#loginPin'].forEach(sel => ($(sel).onkeydown = e => { if (e.key === 'Enter') doLogin(); }));
     S.setAuthMode = setMode;
   }
@@ -800,6 +805,54 @@
     m.querySelector(prefill ? '#jPass' : '#jId').focus();
     m.addEventListener('keydown', e => { if (e.key === 'Enter') go2(); });
   }
+  // ───────── Восстановление пароля ─────────
+  function recoveryModal(code) {
+    const m = modal(`${head('🔑 Код восстановления')}
+      <p class="muted" style="margin-top:-4px">Если забудете пароль, этот код поможет его сменить. Сохраните его — сделайте скриншот или запишите.</p>
+      <div class="rc-code">${esc(code)}</div>
+      <p class="muted" style="font-size:13px">Код всегда можно посмотреть в кабинете.</p>
+      <div class="foot"><button class="btn btn-ghost" id="rcCopy">Скопировать</button><button class="btn btn-gold" data-close>Я сохранил</button></div>`);
+    m.querySelector('#rcCopy').onclick = () => { try { navigator.clipboard.writeText(code); toast('Код скопирован'); } catch (e) { } };
+  }
+  function forgotModal() {
+    const m = modal(`${head('Забыли пароль?')}
+      <p class="muted" style="margin-top:-4px">Введите номер и код восстановления — его показывали при регистрации, он есть в кабинете.</p>
+      <div class="field"><label>Номер телефона</label><div class="phone-in"><span>+</span><input class="input" id="fgPhone" type="tel" inputmode="tel" maxlength="20" value="${esc($('#loginPhone').value)}"></div></div>
+      <div class="field"><label>Код восстановления</label><input class="input" id="fgCode" maxlength="12" placeholder="XXXX-XXXX" autocapitalize="characters" autocomplete="off" style="letter-spacing:2px;text-transform:uppercase"></div>
+      <div class="field"><label>Новый пароль</label><input class="input" id="fgPass" type="password" maxlength="40" placeholder="Минимум 4 символа" autocomplete="new-password"></div>
+      <div class="login-err" id="fgErr" hidden></div>
+      <p class="muted" style="font-size:13px">Нет кода? Попросите хозяина сайта — он сбросит пароль и пришлёт новый.</p>
+      <div class="foot"><button class="btn btn-ghost" data-close>Отмена</button><button class="btn btn-gold" id="fgGo">Сменить пароль</button></div>`);
+    const go2 = () => {
+      const phone = m.querySelector('#fgPhone').value.replace(/\D/g, ''), code = m.querySelector('#fgCode').value, pw = m.querySelector('#fgPass').value;
+      const err = t => { const e = m.querySelector('#fgErr'); e.hidden = false; e.textContent = t; };
+      if (phone.length < 9) return err('Введите номер телефона');
+      if (code.replace(/[^a-z0-9]/gi, '').length < 8) return err('Введите код из 8 символов');
+      if (pw.length < 4) return err('Новый пароль — минимум 4 символа');
+      const ph = phone.length === 9 ? '998' + phone : phone, key = 'p' + ph;
+      const bk = Object.entries(S.backups).find(([k]) => { try { return atob(k.replace(/-/g, '+').replace(/_/g, '/')) === key; } catch (e) { return false; } });
+      S.pendingReset = { phone, pw };
+      m.querySelector('#fgGo').disabled = true;
+      send('resetPw', { phone, code, password: pw, backup: bk ? bk[1] : '' });
+    };
+    m.querySelector('#fgGo').onclick = go2;
+    m.addEventListener('keydown', e => { if (e.key === 'Enter') go2(); });
+    m.querySelector(m.querySelector('#fgPhone').value.length > 5 ? '#fgCode' : '#fgPhone').focus();
+  }
+  function onResetResult(d) {
+    const m = $('#modalRoot .modal');
+    if (!d.ok) {
+      if (m && m.querySelector('#fgErr')) { const e = m.querySelector('#fgErr'); e.hidden = false; e.textContent = d.text; m.querySelector('#fgGo').disabled = false; }
+      else toast(d.text, true);
+      return;
+    }
+    closeModal(); toast(d.text);
+    const r = S.pendingReset; S.pendingReset = null; if (!r) return;
+    if (S.setAuthMode) S.setAuthMode('login');
+    $('#loginPhone').value = r.phone; $('#loginPin').value = r.pw;
+    if (S.doLogin) S.doLogin();
+  }
+
   // ───────── С какой суммой сесть за стол ─────────
   function buyInModal(seat) {
     const st = S.st; if (!st) return send('sit', { seat });
@@ -945,6 +998,7 @@
         <div style="flex:1;min-width:220px">
           <div class="field" style="margin-bottom:8px"><label>Имя в игре</label><input class="input" id="pfName" maxlength="18" value="${esc(S.me.name)}"></div>
           <div class="muted" style="font-size:13px;margin-bottom:10px">📱 ${esc(phone)}</div>
+          ${S.me.rc ? `<div class="rc-row"><span>🔑 Код восстановления:</span> <b id="pfRc" class="rc-hidden" title="Нажмите, чтобы показать">${esc(S.me.rc)}</b> <button class="btn btn-ghost" id="pfRcCopy">Копировать</button></div>` : ''}
           <div class="avatars" id="pfAva">${AVATARS.map(a => `<button class="av-opt${a === S.me.avatar ? ' sel' : ''}" data-a="${a}" style="background:${avBg(a)}">${a}</button>`).join('')}</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;min-width:190px">
@@ -981,6 +1035,7 @@
       send('profile', { avatar: av, name: nn, newPin: np || undefined }); updateUser(); renderProfile(); toast('Сохранено');
     };
     $('#bonusBtn').onclick = () => send('bonus');
+    if ($('#pfRc')) { $('#pfRc').onclick = () => $('#pfRc').classList.toggle('rc-hidden'); $('#pfRcCopy').onclick = () => { try { navigator.clipboard.writeText(S.me.rc); toast('Код скопирован'); } catch (e) { } }; }
     $('#pfLogout').onclick = () => $('#logoutBtn').click();
   }
   function renderSettings() {
