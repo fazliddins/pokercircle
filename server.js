@@ -290,7 +290,7 @@ class Room {
   }
 
   // ——— рассадка ———
-  sit(c, seat) {
+  sit(c, seat, amount) {
     const u = c.user;
     if (this.seatOf(u.pid) >= 0) return 'Вы уже сидите за столом';
     if (seat < 0 || seat >= this.maxSeats || this.seats[seat]) return 'Место занято';
@@ -300,7 +300,11 @@ class Room {
     // бай-ин списывается с баланса игрока
     const bal = Wallet.bal(u.pid);
     let buyIn = this.startStack;
-    if (this.mode === 'cash') buyIn = Math.min(this.startStack, bal);
+    if (this.mode === 'cash') {
+      buyIn = Math.min(this.startStack, bal);
+      // игрок сам выбрал, со сколькими фишками сесть
+      if (amount > 0) buyIn = Math.min(bal, Math.max(this.bb * 10, Math.floor(amount)));
+    }
     if (buyIn < (this.mode === 'cash' ? this.bb * 10 : this.startStack))
       return `Недостаточно фишек на балансе (${bal.toLocaleString('ru-RU')}). Нужно ${(this.mode === 'cash' ? this.bb * 10 : this.startStack).toLocaleString('ru-RU')}. Заберите бонус в кабинете.`;
     if (!Wallet.charge(u.pid, buyIn)) return 'Недостаточно фишек на балансе';
@@ -959,10 +963,10 @@ const handlers = {
     if (!room) return handlers.createRoom(c, { name: 'Быстрая игра', sb: 500, bb: 1000, ante: 100, startStack: 50000, mode: 'cash', oneIp: true, levelMode: 'hands', levelEvery: 10 });
     joinRoom(c, room);
     const free = room.seats.findIndex(s => !s);
-    if (free >= 0 && room.seatOf(c.user.pid) < 0) { const e = room.sit(c, free); if (e) send(c, 'error', { text: e }); }
+    if (free >= 0 && room.seatOf(c.user.pid) < 0) send(c, 'askBuyIn', { seat: free });
   },
   leaveRoom(c) { leaveRoom(c); send(c, 'left', {}); },
-  sit(c, d) { const r = rooms.get(c.roomId); if (!r) return; const e = r.sit(c, +d.seat); if (e) send(c, 'error', { text: e }); },
+  sit(c, d) { const r = rooms.get(c.roomId); if (!r) return; const e = r.sit(c, +d.seat, +d.amount || 0); if (e) send(c, 'error', { text: e }); },
   stand(c) { const r = rooms.get(c.roomId); if (r) r.stand(c.user.pid); },
   action(c, d) {
     const r = rooms.get(c.roomId); if (!r) return;
