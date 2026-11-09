@@ -139,9 +139,9 @@ function decide(level, v) {
     let hs = equity(hole, [], 1, Math.round(L.iters * 0.8));
     hs = Math.max(0, Math.min(1, hs + rnd(-L.noise, L.noise) * 0.6));
     const T = {
-      easy: { open: 0.78, call: 0.45, reraise: 0.84, limp: 0.36 },
-      medium: { open: 0.62, call: 0.56, reraise: 0.76, limp: 0.5 },
-      hard: { open: 0.58 + 0.012 * nOpp - (inPosition ? 0.03 : 0), call: 0.6, reraise: 0.72, limp: 0.6 }
+      easy: { open: 0.74, call: 0.4, reraise: 0.82, limp: 0.36 },
+      medium: { open: 0.6, call: 0.5 + 0.015 * (nOpp - 1), reraise: 0.73, limp: 0.5 },
+      hard: { open: 0.56 + 0.012 * nOpp - (inPosition ? 0.03 : 0), call: 0.485 + 0.02 * (nOpp - 1), reraise: 0.69, limp: 0.6 }
     }[level] || {};
     const raised = currentBet > bb;                       // кто-то уже повысил
     if (!raised) {
@@ -152,7 +152,8 @@ function decide(level, v) {
     }
     const big = toCall > stack * 0.35;
     if (canRaise && hs >= T.reraise + (big ? 0.05 : 0) && (level !== 'easy' || chance(0.4))) return big || spr0(stack, pot) < 1.5 ? { type: 'raise', amount: maxTo } : R(0);
-    if (hs >= T.call + (big ? 0.1 : 0) + Math.min(0.08, facingRaises * 0.03) || hs > potOdds + 0.25) return CALL;
+    const sizeAdj = Math.min(0.06, Math.max(-0.03, (toCall / Math.max(1, pot) - 0.5) * 0.08));   // крупный рейз — чуть строже, маленький — шире
+    if (hs >= T.call + sizeAdj + (big ? 0.1 : 0) + Math.min(0.06, Math.max(0, facingRaises - 1) * 0.03) || hs > potOdds + 0.25) return CALL;
     if (level === 'easy' && toCall <= bb * 3 && chance(0.45)) return CALL;
     return FOLD;
   }
