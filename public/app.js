@@ -130,7 +130,7 @@
       case 'welcome':
         S.me.pid = d.pid; S.me.name = d.name; S.me.avatar = d.avatar; store.set('name', d.name); store.set('avatar', d.avatar);
         S.token = d.token; store.set('token', d.token); saveBackup(d.backup); S.leaders = d.leaders || [];
-        S.me.phone = d.phone || ''; S.me.rc = d.rc || ''; if (d.wallet) setWallet(d.wallet);
+        S.me.phone = d.phone || ''; S.me.rc = d.rc || ''; S.me.photo = d.photo || ''; S.me.gid = d.gid || ''; S.giftLog = d.giftLog || []; if (d.wallet) setWallet(d.wallet);
         if (d.newRc && d.rc) setTimeout(() => recoveryModal(d.rc), 900);
         if (!S.loggedIn || !$('#login').hidden) enterApp();
         updateUser(); if (S.view === 'profile') renderProfile();
@@ -157,6 +157,13 @@
       case 'toast': toast(d.text); break;
       case 'needPassword': passwordModal(d); break;
       case 'resetResult': onResetResult(d); break;
+      case 'photo': S.me.photo = d.photo || ''; updateUser(); if (S.view === 'profile') renderProfile(); toast(d.photo ? 'Фото обновлено' : 'Фото убрано'); break;
+      case 'giftFound': if (S.giftUi) { if (d.ok) S.giftUi.pick(d); else S.giftUi.err(d.text); } break;
+      case 'giftResult':
+        if (d.ok) { closeModal(); toast('✅ ' + d.text); S.giftLog = d.giftLog || S.giftLog; if (S.view === 'profile') renderProfile(); }
+        else if (S.giftUi) { S.giftUi.err(d.text); const g = S.giftUi.m.querySelector('#gfGo'); if (g) g.disabled = false; }
+        break;
+      case 'giftIn': toast(`🎁 ${d.from} перевёл вам ${fmt(d.amt)} фишек`); S.giftLog = d.giftLog || S.giftLog; if (S.view === 'profile') renderProfile(); if (window.DealerSfx && DealerSfx.win) DealerSfx.win(); break;
       case 'askBuyIn': setTimeout(() => buyInModal(d.seat), 400); break;
       case 'publicUrl': { const changed = d.url && d.url !== S.publicUrl; S.publicUrl = d.url; if (d.sign) S.sign = d.sign; renderLan(); if (changed) toast('🌍 Ссылка для друзей готова!'); break; }
       case 'authError':
@@ -252,8 +259,10 @@
       }, 2500);
     }
   }
+  // аватарка: своё фото, если загружено, иначе зверёк
+  const avIn = (a, ph) => (ph ? `<img class="ava-img" src="${esc(ph)}" alt="" loading="lazy">` : esc(a || '🦊'));
   function updateUser() {
-    $('#userAva').textContent = S.me.avatar; $('#userAva').style.background = avBg(S.me.avatar);
+    $('#userAva').innerHTML = avIn(S.me.avatar, S.me.photo); $('#userAva').style.background = avBg(S.me.avatar);
     $('#userName').textContent = S.me.name; $('#heroName').textContent = S.me.name;
   }
 
@@ -335,7 +344,7 @@
   function plural(n, a, b, c) { n = Math.abs(n) % 100; const n1 = n % 10; if (n > 10 && n < 20) return c; if (n1 > 1 && n1 < 5) return b; if (n1 === 1) return a; return c; }
   function renderOnline() {
     $('#onlineList').innerHTML = `<div class="muted" style="font-size:12px;margin-bottom:8px">Сейчас на сервере: ${S.online.length}</div>` + S.online.map(u =>
-      `<div class="friend"><div class="ava" style="background:${avBg(u.avatar)}">${esc(u.avatar)}</div><div>${esc(u.name)}<small>${u.room ? 'За столом «' + esc(u.room) + '»' : 'В лобби'}</small></div></div>`).join('');
+      `<div class="friend"><div class="ava" style="background:${avBg(u.avatar)}">${avIn(u.avatar, u.photo)}</div><div>${esc(u.name)}<small>${u.room ? 'За столом «' + esc(u.room) + '»' : 'В лобби'}</small></div></div>`).join('');
   }
 
   // ───────── Стол: геометрия ─────────
@@ -493,7 +502,7 @@
       const stackTxt = p.stack === 0 && !p.inHand ? (st.room.mode === 'cash' ? 'Нет фишек' : 'Выбыл') : (p.allIn && p.inHand ? 'Олл-ин' : fmt(p.stack));
       html += `<div class="${cls}" data-seat="${i}" style="left:${pos.x}px;top:${pos.y}px" title="${esc(p.name)}${p.ip ? ' · IP ' + esc(p.ip) : ''}">
         ${act}
-        <div class="ring"><div class="ava" style="background:${avBg(p.avatar)}">${esc(p.avatar)}</div><div class="timer"></div></div>
+        <div class="ring"><div class="ava" style="background:${avBg(p.avatar)}">${avIn(p.avatar, p.photo)}</div><div class="timer"></div></div>
         <div class="plate"><div class="nm">${p.me ? 'Вы' : esc(p.name)}${p.isHost ? ' 👑' : ''}</div><div class="st">${stackTxt}</div></div>
 
         ${!p.connected ? '<div class="discon">нет связи</div>' : ''}
@@ -1020,9 +1029,10 @@
     modal(`${head('Уведомления')}${S.notes.length ? S.notes.map(n => `<div class="friend"><div style="flex:1">${esc(n.text)}<small>${new Date(n.time).toLocaleTimeString('ru-RU')}</small></div></div>`).join('') : '<div class="empty">Новых уведомлений нет</div>'}`);
   }
   function onlineModal() {
-    modal(`${head('Кто онлайн')}${S.online.map(u => `<div class="friend"><div class="ava" style="background:${avBg(u.avatar)}">${esc(u.avatar)}</div><div>${esc(u.name)}<small>${u.room ? 'За столом «' + esc(u.room) + '»' : 'В лобби'}</small></div></div>`).join('')}
+    modal(`${head('Кто онлайн')}${S.online.map(u => `<div class="friend"><div class="ava" style="background:${avBg(u.avatar)}">${avIn(u.avatar, u.photo)}</div><div style="flex:1">${esc(u.name)}<small>${u.room ? 'За столом «' + esc(u.room) + '»' : 'В лобби'}</small></div>${u.gid && u.gid !== S.me.gid ? `<button class="btn btn-ghost gift-btn" data-gift="${esc(u.gid)}">🎁</button>` : ''}</div>`).join('')}
       <div class="foot"><button class="btn btn-gold" data-close id="oInvite">Пригласить друзей</button></div>`);
     $('#oInvite').onclick = () => setTimeout(() => (S.roomId ? inviteModal() : go('lobby')), 0);
+    $$('#modalRoot [data-gift]').forEach(b => b.onclick = () => { const g = b.dataset.gift; closeModal(); giftModal(g); });
   }
 
   // ───────── Профиль и настройки ─────────
@@ -1052,7 +1062,11 @@
         <button class="btn btn-gold" id="bonusBtn" ${bonusLeft > 0 ? 'disabled' : ''}>${bonusText(bonusLeft)}</button>
       </div>
       <div class="panel" style="padding:18px;display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:14px">
-        <div class="ava" style="width:78px;height:78px;font-size:40px;border:3px solid var(--gold);background:${avBg(S.me.avatar)}">${esc(S.me.avatar)}</div>
+        <div class="pf-photo">
+          <div class="ava" style="width:96px;height:96px;font-size:46px;border:3px solid var(--gold);background:${avBg(S.me.avatar)}">${avIn(S.me.avatar, S.me.photo)}</div>
+          <label class="btn btn-ghost pf-photo-btn">📷 ${S.me.photo ? 'Другое фото' : 'Своё фото'}<input type="file" id="pfPhoto" accept="image/*" hidden></label>
+          ${S.me.photo ? '<button class="btn btn-ghost pf-photo-btn" id="pfPhotoDel">Убрать фото</button>' : ''}
+        </div>
         <div style="flex:1;min-width:220px">
           <div class="field" style="margin-bottom:8px"><label>Имя в игре</label><input class="input" id="pfName" maxlength="18" value="${esc(S.me.name)}"></div>
           <div class="muted" style="font-size:13px;margin-bottom:10px">📱 ${esc(phone)}</div>
@@ -1072,6 +1086,11 @@
         <div class="panel stat"><div class="v">${fmt(s.biggest)}</div><div class="l">Самый большой банк</div></div>
         <div class="panel stat"><div class="v" style="font-size:17px">${s.best ? esc(s.best.desc) : '—'}</div><div class="l">Лучшая комбинация</div></div>
       </div>
+      <div class="panel gift-panel">
+        <div class="gift-head"><div><h3 style="margin:0">🎁 Перевести фишки другу</h3><div class="muted" style="font-size:13px;margin-top:3px">По номеру телефона или выберите из списка игроков. Фишки за столом не переводятся — только баланс.</div></div>
+          <button class="btn btn-gold" id="giftOpen">Перевести</button></div>
+        ${(S.giftLog || []).length ? `<div class="gift-log">${S.giftLog.slice(0, 8).map(g => `<div class="gift-row"><span>${g.dir === 'in' ? '⬇️ от' : '⬆️ кому:'} <b>${esc(g.name)}</b></span><span class="muted">${new Date(g.t).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span><b class="${g.dir === 'in' ? 'gin' : 'gout'}">${g.dir === 'in' ? '+' : '−'}${fmt(g.amt)}</b></div>`).join('')}</div>` : ''}
+      </div>
       <div class="prof-grid">
         <div><h3 style="margin:6px 0 10px">История игр</h3>
           <div class="panel">${games.length ? games.map(g => `<div class="hist-row">
@@ -1081,7 +1100,7 @@
             <div class="cards">Мои: <span class="mini-cards">${(g.cards || []).map(miniCard).join('')}</span>${g.board && g.board.length ? ` Стол: <span class="mini-cards">${g.board.map(miniCard).join('')}</span>` : ''}</div>
           </div>`).join('') : '<div class="empty" style="border:0">Здесь появятся ваши раздачи — с картами и результатом</div>'}</div></div>
         <div><h3 style="margin:6px 0 10px">🏆 Рейтинг игроков</h3>
-          <div class="panel">${S.leaders.length ? S.leaders.map((l, i) => `<div class="leader"><span class="pos">${i + 1}</span><div class="ava" style="background:${avBg(l.avatar)}">${esc(l.avatar || '🦊')}</div><div class="nm">${esc(l.name)}<small>${fmt(l.hands)} раздач · ${fmt(l.wins)} побед</small></div><span class="v gold">${fmt(l.balance != null ? l.balance : l.net)}</span></div>`).join('') : '<div class="empty" style="border:0">Пока пусто</div>'}</div></div>
+          <div class="panel">${S.leaders.length ? S.leaders.map((l, i) => `<div class="leader"><span class="pos">${i + 1}</span><div class="ava" style="background:${avBg(l.avatar)}">${avIn(l.avatar, l.photo)}</div><div class="nm">${esc(l.name)}<small>${fmt(l.hands)} раздач · ${fmt(l.wins)} побед</small></div><span class="v gold">${fmt(l.balance != null ? l.balance : l.net)}</span></div>`).join('') : '<div class="empty" style="border:0">Пока пусто</div>'}</div></div>
       </div>`;
     let av = S.me.avatar;
     $('#pfAva').onclick = e => { const b = e.target.closest('.av-opt'); if (!b) return; $$('#pfAva .av-opt').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); av = b.dataset.a; };
@@ -1095,6 +1114,63 @@
     $('#bonusBtn').onclick = () => send('bonus');
     if ($('#pfRc')) { $('#pfRc').onclick = () => $('#pfRc').classList.toggle('rc-hidden'); $('#pfRcCopy').onclick = () => { try { navigator.clipboard.writeText(S.me.rc); toast('Код скопирован'); } catch (e) { } }; }
     $('#pfLogout').onclick = () => $('#logoutBtn').click();
+    $('#pfPhoto').onchange = e => { const f = e.target.files[0]; if (f) uploadPhoto(f); };
+    if ($('#pfPhotoDel')) $('#pfPhotoDel').onclick = () => send('setPhoto', { remove: true });
+    $('#giftOpen').onclick = () => giftModal();
+  }
+  // ───────── Своё фото: обрезаем по центру в квадрат 160×160 и сжимаем в JPEG (≈10 КБ) ─────────
+  function uploadPhoto(file) {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const N = 160, c = document.createElement('canvas'); c.width = c.height = N;
+      const k = Math.min(img.naturalWidth, img.naturalHeight), sx = (img.naturalWidth - k) / 2, sy = (img.naturalHeight - k) / 2.6;
+      const x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(img, sx, Math.max(0, sy), k, k, 0, 0, N, N);
+      let q = 0.82, data = c.toDataURL('image/jpeg', q);
+      while (data.length > 60000 && q > 0.4) { q -= 0.1; data = c.toDataURL('image/jpeg', q); }
+      URL.revokeObjectURL(url);
+      send('setPhoto', { data }); toast('Фото загружается…');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); toast('Не получилось открыть это фото', true); };
+    img.src = url;
+  }
+  // ───────── Перевод фишек ─────────
+  function giftModal(pre) {
+    const known = new Map();
+    for (const u of S.online || []) if (u.gid && u.gid !== S.me.gid) known.set(u.gid, u);
+    for (const l of S.leaders || []) if (l.gid && l.gid !== S.me.gid && !known.has(l.gid)) known.set(l.gid, l);
+    const bal = (S.wallet && S.wallet.balance) || 0;
+    const m = modal(`${head('🎁 Перевести фишки')}
+      <p class="muted" style="margin-top:-6px">На балансе: <b style="color:var(--gold2)">${fmt(bal)}</b></p>
+      <div id="gfStep1">
+        <div class="field"><label>Номер телефона друга</label><div class="gift-find"><div class="phone-in"><span>+</span><input class="input" id="gfPhone" type="tel" inputmode="tel" placeholder="998 90 123 45 67" maxlength="20"></div><button class="btn btn-gold" id="gfFind">Найти</button></div></div>
+        ${known.size ? `<div class="muted" style="font-size:13px;margin:4px 0 8px">или выберите:</div><div class="gift-pick">${[...known.values()].map(u => `<button class="gift-who" data-gid="${esc(u.gid)}"><span class="ava" style="background:${avBg(u.avatar)}">${avIn(u.avatar, u.photo)}</span>${esc(u.name)}</button>`).join('')}</div>` : ''}
+      </div>
+      <div id="gfStep2" hidden>
+        <div class="gift-to" id="gfTo"></div>
+        <div class="field"><label>Сколько фишек</label><input class="input" id="gfAmt" type="number" inputmode="numeric" min="100" step="100" placeholder="Например, 10 000"></div>
+        <div class="buyin-quick">${[1000, 5000, 10000, 50000].map(v => `<button data-v="${v}">${fmt(v)}</button>`).join('')}</div>
+      </div>
+      <div class="login-err" id="gfErr" hidden></div>
+      <div class="foot"><button class="btn btn-ghost" data-close>Отмена</button><button class="btn btn-gold" id="gfGo" hidden>Перевести</button></div>`);
+    const err = t => { const e = m.querySelector('#gfErr'); e.hidden = !t; e.textContent = t || ''; };
+    S.giftUi = { m, err, pick: who => {
+      S.giftTo = who; err('');
+      m.querySelector('#gfStep1').hidden = true; m.querySelector('#gfStep2').hidden = false; m.querySelector('#gfGo').hidden = false;
+      m.querySelector('#gfTo').innerHTML = `<span class="ava" style="background:${avBg(who.avatar)}">${avIn(who.avatar, who.photo)}</span><b>${esc(who.name)}</b><button class="btn btn-ghost" id="gfBack">Другой</button>`;
+      m.querySelector('#gfBack').onclick = () => { m.querySelector('#gfStep1').hidden = false; m.querySelector('#gfStep2').hidden = true; m.querySelector('#gfGo').hidden = true; };
+      setTimeout(() => m.querySelector('#gfAmt').focus(), 50);
+    } };
+    m.querySelector('#gfFind').onclick = () => { const ph = m.querySelector('#gfPhone').value.replace(/\D/g, ''); if (ph.length < 9) return err('Введите номер полностью'); err(''); send('giftFind', { phone: ph }); };
+    m.querySelectorAll('[data-gid]').forEach(b => b.onclick = () => send('giftFind', { gid: b.dataset.gid }));
+    m.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { m.querySelector('#gfAmt').value = b.dataset.v; });
+    m.querySelector('#gfGo').onclick = () => {
+      const amt = Math.floor(+m.querySelector('#gfAmt').value || 0);
+      if (amt < 100) return err('Минимум 100 фишек');
+      if (amt > ((S.wallet && S.wallet.balance) || 0)) return err('На балансе столько нет');
+      if (!confirm(`Перевести ${fmt(amt)} фишек игроку ${S.giftTo.name}?`)) return;
+      m.querySelector('#gfGo').disabled = true; send('gift', { gid: S.giftTo.gid, amount: amt });
+    };
+    if (pre) send('giftFind', { gid: pre });
   }
   function renderSettings() {
     const V = window.DealerVoice; V.load();
