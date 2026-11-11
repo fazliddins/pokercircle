@@ -56,6 +56,7 @@ const server = http.createServer((req, res) => {
   }
   if (url.startsWith('/studio')) { Studio.handle(req, res, url, SECRET); return; }
   if (url === '/admin' || url === '/admin/reset') return adminPage(req, res, url);
+  if (url.startsWith('/photo/') && servePhoto(url, res)) return;
   let file = path.normalize(path.join(PUBLIC, url === '/' ? 'index.html' : url));
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, data) => {
@@ -78,7 +79,7 @@ function ipOf(req) {
 function send(c, t, d) { if (c && c.open) c.send(JSON.stringify({ t, d })); }
 function onlineUsers() {
   const seen = new Map();
-  for (const c of clients) if (c.user) seen.set(c.user.pid, { name: c.user.name, avatar: c.user.avatar, room: c.roomId ? (rooms.get(c.roomId) || {}).name || null : null });
+  for (const c of clients) if (c.user) seen.set(c.user.pid, { name: c.user.name, avatar: c.user.avatar, photo: c.user.photo || '', gid: c.user.key ? gidOf(c.user.key) : '', room: c.roomId ? (rooms.get(c.roomId) || {}).name || null : null });
   return [...seen.values()];
 }
 function broadcastLobby() {
@@ -134,8 +135,41 @@ function restoreFromBackup(bk, key) {
   if (!profiles.has(key)) {
     if (pr.inPlay) { for (const v of Object.values(pr.inPlay)) pr.balance = (pr.balance || 0) + (v || 0); pr.inPlay = {}; }
     profiles.set(key, pr); saveProfiles();
+    reconcileGifts(key);
   }
   return profiles.get(key);
+}
+// ── фото профиля: хранится в профиле (и в его копии на устройстве), отдаётся по ссылке /photo/<id>.jpg
+const photoUrl = pr => (pr && pr.photo && pr.photoId ? '/photo/' + pr.photoId + '.jpg' : '');
+function servePhoto(url, res) {
+  const m = /^\/photo\/([a-f0-9]{8,24})\.jpg$/.exec(url); if (!m) return false;
+  for (const pr of profiles.values()) if (pr.photoId === m[1] && pr.photo) {
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=31536000, immutable' });
+    res.end(Buffer.from(pr.photo.split(',')[1] || '', 'base64')); return true;
+  }
+  res.writeHead(404); res.end(); return true;
+}
+// ── переводы фишек между игроками
+// Номер телефона наружу не выдаём: у каждого игрока есть непрозрачный код gid.
+const gidOf = key => hmac('gid:' + key).slice(0, 14);
+const keyByGid = gid => { for (const k of profiles.keys()) if (gidOf(k) === gid) return k; return null; };
+function giftLog(pr, entry) { pr.giftLog = [entry, ...(pr.giftLog || [])].slice(0, 30); }
+function applyGiftIn(to, g, fromName) {
+  to.giftsIn = to.giftsIn || [];
+  if (to.giftsIn.includes(g.id)) return false;
+  to.giftsIn = [...to.giftsIn, g.id].slice(-400);
+  to.balance = (to.balance || 0) + g.amt;
+  giftLog(to, { t: g.t, dir: 'in', name: fromName, amt: g.amt });
+  return true;
+}
+// После перезапуска сервера профили восстанавливаются с устройств по одному. Перевод хранится у отправителя
+// (giftsOut) и у получателя (giftsIn) — если копия получателя «старая», перевод зачисляется ещё раз ровно один раз.
+function reconcileGifts(key) {
+  const me = profiles.get(key); if (!me) return;
+  const touched = new Set();
+  for (const [k, p] of profiles) if (k !== key && p.giftsOut) for (const g of p.giftsOut) if (g.to === key && applyGiftIn(me, g, p.name)) touched.add('u:' + key);
+  for (const g of me.giftsOut || []) { const r = profiles.get(g.to); if (r && applyGiftIn(r, g, me.name)) touched.add('u:' + g.to); }
+  if (touched.size) { saveProfiles(); for (const pid of touched) Wallet.notify(pid); }
 }
 // статистика игрока: у профиля — постоянная, у гостя — до перезапуска
 const guestStats = new Map();
@@ -188,8 +222,8 @@ for (const pr of profiles.values()) {
 saveProfiles();
 
 function leaderboard() {
-  return [...profiles.values()].filter(p => p.stats && p.stats.hands > 0)
-    .map(p => ({ name: p.name, avatar: p.avatar, net: p.stats.net || 0, balance: p.balance || 0, hands: p.stats.hands, wins: p.stats.wins }))
+  return [...profiles.entries()].filter(([, p]) => p.stats && p.stats.hands > 0)
+    .map(([k, p]) => ({ name: p.name, avatar: p.avatar, photo: photoUrl(p), gid: gidOf(k), net: p.stats.net || 0, balance: p.balance || 0, hands: p.stats.hands, wins: p.stats.wins }))
     .sort((a, b) => b.balance - a.balance).slice(0, 10);
 }
 const pick = a => a[Math.floor(Math.random() * a.length)];
@@ -273,7 +307,7 @@ class Room {
       if (!p) return null;
       const show = p.pid === pid || (p.revealed && !p.folded);
       return {
-        i, name: p.name, avatar: p.avatar, stack: p.stack, bet: p.bet, folded: p.folded, allIn: p.allIn,
+        i, name: p.name, avatar: p.avatar, photo: p.photo || '', stack: p.stack, bet: p.bet, folded: p.folded, allIn: p.allIn,
         inHand: p.inHand, connected: p.connected, sitOut: p.sitOut, lastAction: p.lastAction,
         ip: p.ip, isHost: p.pid === this.hostPid, rebuys: p.rebuys, me: p.pid === pid,
         cards: p.inHand ? (show ? p.cards : p.cards.map(() => null)) : [],
@@ -344,7 +378,7 @@ class Room {
     if (!Wallet.charge(u.pid, buyIn)) return 'Недостаточно фишек на балансе';
     Wallet.inPlay(u.pid, this.id, buyIn);
     this.seats[seat] = {
-      pid: u.pid, name: u.name, avatar: u.avatar, ip: u.ip, stack: buyIn, paid: true, connected: true,
+      pid: u.pid, name: u.name, avatar: u.avatar, photo: u.photo || '', ip: u.ip, stack: buyIn, paid: true, connected: true,
       sitOut: false, inHand: false, cards: [], folded: false, allIn: false, bet: 0, total: 0, acted: false,
       lastAction: '', revealed: false, best: null, winAmount: 0, rebuys: 0, leaving: false, discAt: 0
     };
@@ -954,7 +988,7 @@ function joinRoom(c, room) {
   const i = room.seatOf(c.user.pid);
   if (i >= 0) {
     const p = room.seats[i];
-    p.connected = true; p.ip = c.user.ip; p.name = c.user.name; p.avatar = c.user.avatar;
+    p.connected = true; p.ip = c.user.ip; p.name = c.user.name; p.avatar = c.user.avatar; p.photo = c.user.photo || '';
   }
   send(c, 'joined', { roomId: room.id, chat: room.chat.slice(-60), history: room.history.slice(0, 30) });
   room.broadcast();
@@ -1012,10 +1046,10 @@ const handlers = {
     let newRc = false;
     if (!pr.tg && !pr.rc) { pr.rc = genCode(); newRc = true; saveProfiles(); }
     if (d.avatar && d.avatar !== pr.avatar && !d.token) { pr.avatar = avatar; saveProfiles(); }
-    c.user = { pid: 'u:' + key, key, name: pr.name, avatar: pr.avatar || avatar, ip: c.ip };
+    c.user = { pid: 'u:' + key, key, name: pr.name, avatar: pr.avatar || avatar, photo: photoUrl(pr), ip: c.ip };
     send(c, 'welcome', {
       ip: c.ip, pid: c.user.pid, name: pr.name, avatar: c.user.avatar, phone: pr.phone || '', wallet: Wallet.info(pr), token: tokenFor(key, pr), backup: backupOf(key),
-      rc: pr.rc || '', newRc,
+      rc: pr.rc || '', newRc, photo: photoUrl(pr), gid: gidOf(key), giftLog: pr.giftLog || [],
       stats: statOf(c.user.pid), lan: lanIPs(), port: PORT, publicUrl: Tunnel.url, sign: Sign.page, bot: TG.me ? TG.me.username : '', leaders: leaderboard()
     });
     broadcastLobby();
@@ -1056,6 +1090,53 @@ const handlers = {
     const r = rooms.get(c.roomId);
     if (r) { const i = r.seatOf(c.user.pid); if (i >= 0) { r.seats[i].name = c.user.name; r.seats[i].avatar = c.user.avatar; } r.broadcast(); }
     broadcastLobby();
+  },
+  // своё фото: присылается уже уменьшенным (160×160 JPEG)
+  setPhoto(c, d) {
+    const pr = profiles.get(c.user.key); if (!pr) return;
+    if (d && d.remove) { delete pr.photo; delete pr.photoId; }
+    else {
+      const data = String(d && d.data || '');
+      if (!/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(data) || data.length > 90000) return send(c, 'error', { text: 'Не удалось загрузить фото — попробуйте другое' });
+      pr.photo = data; pr.photoId = crypto.randomBytes(8).toString('hex');
+    }
+    c.user.photo = photoUrl(pr);
+    for (const x of clients) if (x.user && x.user.pid === c.user.pid) x.user.photo = c.user.photo;
+    saveProfiles(); send(c, 'photo', { photo: c.user.photo }); send(c, 'backup', { backup: backupOf(c.user.key) });
+    for (const r of rooms.values()) { const i = r.seatOf(c.user.pid); if (i >= 0) { r.seats[i].photo = c.user.photo; r.broadcast(); } }
+    broadcastLobby();
+  },
+  // найти игрока для перевода: по номеру телефона или по коду из списка игроков
+  giftFind(c, d) {
+    const now = Date.now(); c.findTries = (c.findTries || []).filter(t => now - t < 60000);
+    if (c.findTries.length >= 15) return send(c, 'giftFound', { ok: false, text: 'Слишком много поисков — подождите минуту' });
+    c.findTries.push(now);
+    let key = null;
+    if (d.gid) key = keyByGid(String(d.gid));
+    else { let ph = String(d.phone || '').replace(/\D/g, ''); if (ph.length === 9) ph = '998' + ph; if (ph.length >= 9) key = profiles.has('p' + ph) ? 'p' + ph : null; }
+    const pr = key && profiles.get(key);
+    if (!pr || pr.tg) return send(c, 'giftFound', { ok: false, text: 'Игрок не найден. Если он давно не заходил — пусть откроет сайт, и попробуйте снова.' });
+    if (key === c.user.key) return send(c, 'giftFound', { ok: false, text: 'Это ваш номер' });
+    send(c, 'giftFound', { ok: true, gid: gidOf(key), name: pr.name, avatar: pr.avatar, photo: photoUrl(pr) });
+  },
+  gift(c, d) {
+    const me = profiles.get(c.user.key); if (!me) return;
+    const key = keyByGid(String(d.gid || '')), to = key && profiles.get(key);
+    const amt = Math.floor(+d.amount || 0);
+    const fail = text => send(c, 'giftResult', { ok: false, text });
+    if (!to || to.tg) return fail('Игрок не найден');
+    if (key === c.user.key) return fail('Нельзя перевести самому себе');
+    if (!(amt >= 100)) return fail('Минимальный перевод — 100 фишек');
+    if ((me.balance || 0) < amt) return fail('На балансе недостаточно фишек (фишки за столом не считаются)');
+    const g = { id: crypto.randomBytes(8).toString('hex'), to: key, amt, t: Date.now() };
+    me.balance -= amt;
+    me.giftsOut = [...(me.giftsOut || []).filter(x => Date.now() - x.t < 90 * 864e5), g].slice(-100);
+    giftLog(me, { t: g.t, dir: 'out', name: to.name, amt });
+    applyGiftIn(to, g, me.name);
+    saveProfiles();
+    Wallet.notify(c.user.pid); Wallet.notify('u:' + key);
+    send(c, 'giftResult', { ok: true, text: `Переведено ${amt.toLocaleString('ru-RU')} фишек игроку ${to.name}`, giftLog: me.giftLog });
+    for (const x of clients) if (x.user && x.user.pid === 'u:' + key) send(x, 'giftIn', { from: me.name, amt, giftLog: to.giftLog });
   },
   bonus(c) {
     const pr = profiles.get(c.user.key); if (!pr) return;
@@ -1136,7 +1217,7 @@ const handlers = {
     const now = Date.now();
     if (c.lastChat && now - c.lastChat < 400) return;
     c.lastChat = now;
-    r.pushChat({ from: c.user.name, avatar: c.user.avatar, text });
+    r.pushChat({ from: c.user.name, avatar: c.user.avatar, photo: c.user.photo || '', text });
   },
   emote(c, d) {
     const r = rooms.get(c.roomId); if (!r) return;
